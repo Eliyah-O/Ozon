@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v15</title>
+<title>Ozon Analytics v16</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v15</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v16</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -75,7 +75,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v15';
+const VERSION='v16';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -94,48 +94,47 @@ async function ozon(endpoint, body){
 async function tg(text){ const token=document.getElementById('tgToken').value; const chatId=document.getElementById('tgChatId').value; if(!token||!chatId) return; await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML'})}); }
 
 async function loadPrices(priceMap){
-  log('Список товаров...');
-  const productIds=[];
+  log('Список товаров (offer_id)...');
+  const offerIds=[];
   let lastId='';
   for(let i=0;i<20;i++){
     const d=await ozon('/v3/product/list',{filter:{visibility:'ALL'},last_id:lastId,limit:1000});
     const items=d?.result?.items||[];
-    for(const item of items) if(item.product_id) productIds.push(item.product_id);
+    for(const item of items) if(item.offer_id) offerIds.push(item.offer_id);
     lastId=d?.result?.last_id||'';
     if(!lastId||items.length<1000) break;
   }
-  log('Товаров: '+productIds.length);
+  log('offer_ids: '+offerIds.length);
 
   let priceCount=0, firstLog=true;
-  // Батчи по 100, product_id как ЧИСЛА (как в диагностике)
-  for(let i=0;i<productIds.length;i+=100){
-    const batch=productIds.slice(i,i+100);
+  // v3/product/info/list с фильтром offer_id (не product_id!)
+  for(let i=0;i<offerIds.length;i+=100){
+    const batch=offerIds.slice(i,i+100);
     let d=null;
     try {
-      d=await ozon('/v3/product/info/list',{product_id:batch});
+      // Пробуем разные форматы запроса
+      d=await ozon('/v3/product/info/list',{offer_id:batch});
     } catch(e){
-      if(firstLog){ log('info/list err: '+e.message); firstLog=false; }
-      continue;
+      if(firstLog){ log('offer_id err: '+e.message+', пробую filter'); }
+      try { d=await ozon('/v3/product/info/list',{filter:{offer_id:batch}}); }
+      catch(e2){ if(firstLog){ log('filter err: '+e2.message); firstLog=false; } continue; }
     }
     const items=d?.result?.items||[];
     if(firstLog){
-      log('Батч 0: вернул '+items.length+' товаров');
+      log('Батч 0: '+items.length+' товаров');
       if(items.length>0){
         const s=items[0];
         log('price='+s.price+' offer_id='+s.offer_id);
-        log('sources='+JSON.stringify(s.sources||[]).slice(0,150));
+        log('sku='+s.sku+' fbo='+s.fbo_sku+' fbs='+s.fbs_sku);
+        log('sources='+JSON.stringify(s.sources||[]).slice(0,200));
       }
       firstLog=false;
     }
     for(const item of items){
       const myPrice=parseFloat(String(item.price||0).replace(',','.'));
       const info={price:myPrice, name:item.name||''};
-      if(item.offer_id) priceMap[String(item.offer_id)]=info;
-      if(item.id) priceMap[String(item.id)]=info;
-      if(item.product_id) priceMap[String(item.product_id)]=info;
-      if(item.sku) priceMap[String(item.sku)]=info;
-      if(item.fbo_sku) priceMap[String(item.fbo_sku)]=info;
-      if(item.fbs_sku) priceMap[String(item.fbs_sku)]=info;
+      // Привязываем по ВСЕМ возможным sku
+      [item.offer_id,item.id,item.product_id,item.sku,item.fbo_sku,item.fbs_sku].forEach(k=>{ if(k) priceMap[String(k)]=info; });
       if(item.sources) for(const src of item.sources) if(src.sku) priceMap[String(src.sku)]=info;
       if(myPrice>0) priceCount++;
     }
