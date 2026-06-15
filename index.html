@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v12</title>
+<title>Ozon Analytics v13</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v12</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v13</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -59,6 +59,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
     <div class="debug" id="debugLog"></div>
     <div class="error" id="errorBox"></div>
     <button class="btn" id="loadBtn" onclick="fetchData()">Загрузить статистику →</button>
+    <button class="btn" id="diagBtn" onclick="diagnose()" style="margin-top:10px;background:#1a2a3a">🔍 Найти метод цен</button>
   </div>
   <div id="results">
     <div class="grid2">
@@ -74,7 +75,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v12';
+const VERSION='v13';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -129,6 +130,72 @@ async function loadPrices(priceMap){
   log('Цен: '+priceCount+' (>0: '+Object.values(priceMap).filter(p=>p.price>0).length+')');
 }
 
+
+
+// Полная диагностика — перебираем ВСЕ методы получения цен
+async function diagnose(){
+  if(!cid()||!akey()){ showError('Введите Client ID и API ключ'); return; }
+  saveCreds();
+  document.getElementById('debugLog').innerHTML='';
+  document.getElementById('errorBox').style.display='none';
+  document.getElementById('diagBtn').disabled=true;
+  log('=== ПОИСК МЕТОДА ЦЕН ===');
+
+  // Сначала получим один product_id и offer_id для тестов
+  let testProductId=null, testOfferId=null;
+  try {
+    const d=await ozon('/v3/product/list',{filter:{visibility:'ALL'},last_id:'',limit:1});
+    const item=(d?.result?.items||[])[0];
+    testProductId=item?.product_id;
+    testOfferId=item?.offer_id;
+    log('Тест-товар: product_id='+testProductId+' offer_id='+testOfferId);
+  } catch(e){ log('product/list: '+e.message); }
+
+  // Список методов для проверки
+  const tests=[
+    ['/v2/product/info', {product_id:testProductId}],
+    ['/v3/product/info', {product_id:testProductId}],
+    ['/v2/product/info', {offer_id:testOfferId}],
+    ['/v4/product/info/list', {product_id:[testProductId]}],
+    ['/v3/product/info/list', {product_id:[testProductId]}],
+    ['/v1/product/info/description', {product_id:testProductId}],
+    ['/v4/product/info/prices', {filter:{product_id:[String(testProductId)],visibility:'ALL'},limit:10}],
+    ['/v5/product/info/prices', {filter:{product_id:[String(testProductId)],visibility:'ALL'},limit:10}],
+  ];
+
+  for(const [ep, body] of tests){
+    try {
+      const d=await ozon(ep, body);
+      const r=d?.result||d;
+      // Ищем поля с ценой
+      const item=Array.isArray(r?.items)?r.items[0]:(Array.isArray(r)?r[0]:r);
+      if(!item){ log(ep+' → пусто'); continue; }
+      // Ищем все поля содержащие "price"
+      const priceFields={};
+      function scan(obj, prefix){
+        if(!obj||typeof obj!=='object') return;
+        for(const k in obj){
+          if(k.toLowerCase().includes('price') && (typeof obj[k]==='string'||typeof obj[k]==='number')){
+            priceFields[prefix+k]=obj[k];
+          }
+          if(typeof obj[k]==='object') scan(obj[k], prefix+k+'.');
+        }
+      }
+      scan(item,'');
+      const found=Object.entries(priceFields).filter(([k,v])=>parseFloat(v)>0);
+      if(found.length>0){
+        log('✅ '+ep+':');
+        found.forEach(([k,v])=>log('   '+k+'='+v));
+      } else {
+        log('⚠️ '+ep+' → есть поля но цена 0: '+Object.keys(priceFields).join(','));
+      }
+    } catch(e){
+      log('❌ '+ep+' → '+e.message);
+    }
+  }
+  log('=== ГОТОВО — скинь скриншот ===');
+  document.getElementById('diagBtn').disabled=false;
+}
 
 async function fetchData(){
   if(!cid()||!akey()){ showError('Введите Client ID и API ключ'); return; }
