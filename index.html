@@ -194,7 +194,7 @@ async function fetchData() {
     log('Загружаем цены...');
     const priceMap = {}; let lastId = '';
     for (let i = 0; i < 10; i++) {
-      const d = await ozon('/v2/product/info/prices', { filter: { visibility: 'ALL' }, last_id: lastId, limit: 1000 });
+      const d = await ozon('/v5/product/info/prices', { filter: { visibility: 'ALL' }, last_id: lastId, limit: 1000 });
       const items = d?.result?.items || [];
       for (const item of items) {
         const price = parseFloat(item.price?.price || item.price?.marketing_price || 0);
