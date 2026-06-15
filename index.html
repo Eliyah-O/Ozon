@@ -1,0 +1,146 @@
+// Ozon Analytics → Telegram
+// Запускается через iOS Shortcuts → "Выполнить JavaScript в Safari"
+
+const OZON_CLIENT_ID = "2375416";
+const OZON_API_KEY   = "84c59606-db59-49aa-bd91-1518d3728748";
+const TG_TOKEN       = "8819121520:AAGufyUjTnb69mvIC9F8ZE0Qc4BLnioeKrw";
+const TG_CHAT_ID     = "8819121520";
+
+async function ozon(endpoint, body) {
+  const r = await fetch("https://api-seller.ozon.ru" + endpoint, {
+    method: "POST",
+    headers: {
+      "Client-Id": OZON_CLIENT_ID,
+      "Api-Key": OZON_API_KEY,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+async function tg(text) {
+  await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({chat_id: TG_CHAT_ID, text, parse_mode: "HTML"})
+  });
+}
+
+async function main() {
+  const now = new Date();
+  const dateTo   = now.toISOString().replace("Z", "+00:00");
+  const dateFrom = new Date(now - 30*24*60*60*1000).toISOString().replace("Z", "+00:00");
+
+  await tg("⏳ Загружаю данные Ozon (Ариадна) за 30 дней...");
+
+  // 1. Транзакции
+  let allOps = [], page = 1;
+  while (page <= 10) {
+    const d = await ozon("/v3/finance/transaction/list", {
+      filter: { date: { from: dateFrom, to: dateTo }, operation_type: [], posting_number: "", transaction_type: "all" },
+      page, page_size: 500
+    });
+    const ops = d?.result?.operations || [];
+    allOps = [...allOps, ...ops];
+    if (ops.length < 500) break;
+    page++;
+  }
+
+  // 2. Цены
+  const priceMap = {};
+  let lastId = "";
+  for (let i = 0; i < 10; i++) {
+    const d = await ozon("/v4/product/info/prices", {
+      filter: { visibility: "ALL" }, last_id: lastId, limit: 1000
+    });
+    const items = d?.result?.items || [];
+    for (const item of items) {
+      const price = parseFloat(item.price?.price || item.price?.marketing_price || 0);
+      const info = { price, name: item.name || item.offer_id };
+      priceMap[String(item.offer_id)] = info;
+      if (item.sku) priceMap[String(item.sku)] = info;
+    }
+    lastId = d?.result?.last_id || "";
+    if (!lastId || items.length < 1000) break;
+  }
+
+  // 3. Агрегация
+  const agg = {};
+  for (const op of allOps) {
+    const t = op.operation_type || "";
+    if (!t.toLowerCase().includes("sale") && !t.includes("AgentDelivered") && !t.includes("Compensation")) continue;
+    for (const item of op.items || []) {
+      const key = String(item.sku || item.offer_id || "");
+      if (!key) continue;
+      if (!agg[key]) agg[key] = { name: item.name || priceMap[key]?.name || key, accrual: 0, myPriceTotal: 0, qty: 0 };
+      const qty = parseFloat(item.quantity || 1);
+      agg[key].accrual      += parseFloat(item.payout || 0);
+      agg[key].myPriceTotal += (priceMap[key]?.price || 0) * qty;
+      agg[key].qty          += qty;
+    }
+  }
+
+  // Fallback
+  if (Object.keys(agg).length === 0) {
+    const d = await ozon("/v1/analytics/data", {
+      date_from: dateFrom.slice(0,10), date_to: dateTo.slice(0,10),
+      metrics: ["revenue","ordered_units"], dimension: ["sku"], filters: [],
+      sort: [{ key: "revenue", order: "DESC" }], limit: 200, offset: 0
+    });
+    for (const row of d?.result?.data || []) {
+      const dim = row.dimensions?.[0]; if (!dim) continue;
+      const key = String(dim.id);
+      const revenue = parseFloat(row.metrics?.[0] || 0);
+      const units   = parseFloat(row.metrics?.[1] || 1);
+      agg[key] = { name: dim.name || priceMap[key]?.name || key, accrual: revenue, myPriceTotal: (priceMap[key]?.price||0)*units, qty: units };
+    }
+  }
+
+  // 4. Результаты
+  const results = Object.entries(agg)
+    .filter(([,p]) => p.qty > 0)
+    .map(([key, p]) => {
+      const avgAccrual  = p.accrual / p.qty;
+      const avgMyPrice  = p.myPriceTotal / p.qty;
+      const margin      = avgMyPrice > 0 ? (avgAccrual - avgMyPrice) / avgMyPrice * 100 : null;
+      return { key, name: p.name, total: p.accrual, avgAccrual, avgMyPrice, margin, diff: avgAccrual - avgMyPrice, qty: p.qty };
+    })
+    .sort((a,b) => b.total - a.total);
+
+  if (results.length === 0) { await tg("❌ Продаж за 30 дней не найдено"); return; }
+
+  const totalAccrual = results.reduce((s,p) => s+p.total, 0);
+  const totalMyPrice = results.reduce((s,p) => s+p.avgMyPrice*p.qty, 0);
+  const overall      = totalMyPrice > 0 ? (totalAccrual - totalMyPrice) / totalMyPrice * 100 : null;
+
+  const fmt    = n => n != null ? Math.round(n).toLocaleString("ru-RU") : "—";
+  const fmtPct = n => n == null ? "—" : (n>0?"+":"") + n.toFixed(1) + "%";
+  const medal  = m => m == null ? "⚪" : m >= 20 ? "🟢" : m >= 0 ? "🟡" : "🔴";
+
+  let msg = `📊 <b>Ариадна · Ozon · ${new Date().toLocaleDateString("ru-RU")}</b>\n`;
+  msg += `Период: 30 дней\n\n`;
+  msg += `💰 Выплаты: <b>${fmt(totalAccrual)} ₽</b>\n`;
+  msg += `📈 Наценка итого: <b>${fmtPct(overall)}</b>\n`;
+  msg += `📦 Позиций: ${results.length}\n`;
+  msg += `─────────────────────\n`;
+
+  for (let i = 0; i < Math.min(results.length, 25); i++) {
+    const p = results[i];
+    const name = p.name.length > 35 ? p.name.slice(0,35)+"…" : p.name;
+    msg += `\n${medal(p.margin)} <b>#${i+1} ${name}</b>\n`;
+    msg += `   Цена: ${fmt(p.avgMyPrice)} ₽ → Выплата: ${fmt(p.avgAccrual)} ₽\n`;
+    msg += `   <b>${fmtPct(p.margin)}</b>  (${p.diff>=0?"+":""}${fmt(p.diff)} ₽/шт) × ${Math.round(p.qty)} шт\n`;
+
+    // Шлём частями по 4000 символов
+    if (msg.length > 3500 && i < results.length - 1) {
+      await tg(msg);
+      msg = "";
+    }
+  }
+
+  if (results.length > 25) msg += `\n... и ещё ${results.length-25} позиций`;
+  if (msg) await tg(msg);
+}
+
+main().catch(e => tg("❌ Ошибка: " + e.message));
