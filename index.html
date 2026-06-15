@@ -3,12 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics — Ариадна</title>
+<title>Ozon Analytics v8</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
 .header { background: linear-gradient(135deg,#1a1a2e,#16213e); border-bottom: 1px solid #2a2a3e; padding: 16px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; }
 .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg,#005bff,#00d4ff); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: #fff; flex-shrink: 0; }
+.ver { font-size: 9px; color: #005bff; background: #001a4d; border-radius: 4px; padding: 2px 5px; margin-left: 4px; }
 .body { padding: 20px; max-width: 600px; margin: 0 auto; }
 .card { background: #1a1a2e; border-radius: 16px; padding: 20px; border: 1px solid #2a2a3e; margin-bottom: 14px; }
 label { display: block; margin-bottom: 4px; font-size: 12px; color: #9ca3af; font-weight: 500; }
@@ -16,7 +17,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 .btn { width: 100%; padding: 16px; background: linear-gradient(135deg,#005bff,#0095ff); border: none; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
 .btn:disabled { background: #1a2a3a; cursor: not-allowed; }
 .error { background: #2a1010; border: 1px solid #5a1010; border-radius: 12px; padding: 14px; color: #f87171; font-size: 13px; margin-bottom: 14px; display:none; }
-.debug { background: #0f1a0f; border: 1px solid #1a3a1a; border-radius: 12px; padding: 12px; margin-bottom: 14px; font-family: monospace; font-size: 11px; color: #4ade80; display:none; word-break: break-all; max-height: 200px; overflow-y: auto; }
+.debug { background: #0f1a0f; border: 1px solid #1a3a1a; border-radius: 12px; padding: 12px; margin-bottom: 14px; font-family: monospace; font-size: 11px; color: #4ade80; display:none; word-break: break-all; max-height: 220px; overflow-y: auto; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 .sum-card { background: #1a1a2e; border-radius: 14px; padding: 16px; border: 1px solid #2a2a3e; }
 .sum-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
@@ -41,7 +42,10 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <body>
 <div class="header">
   <div class="logo">O</div>
-  <div><div style="font-size:16px;font-weight:700">Ozon Analytics</div><div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div></div>
+  <div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v8</span></div>
+    <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
+  </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
 </div>
 <div class="body">
@@ -70,6 +74,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
+const VERSION = 'v8';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -88,43 +93,44 @@ async function ozon(endpoint, body){
 async function tg(text){ const token=document.getElementById('tgToken').value; const chatId=document.getElementById('tgChatId').value; if(!token||!chatId) return; await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML'})}); }
 
 async function loadPrices(priceMap){
-  // Шаг 1: получаем все product_id через v3/product/list
-  log('Получаем список товаров...');
-  const allIds=[];
+  // Получаем offer_ids из product/list, потом цены через product/info по offer_id
+  log('Список товаров...');
+  const offerIds=[];
   let lastId='';
   for(let i=0;i<20;i++){
     const d=await ozon('/v3/product/list',{filter:{visibility:'ALL'},last_id:lastId,limit:1000});
     const items=d?.result?.items||[];
-    for(const item of items) if(item.product_id) allIds.push(item.product_id);
+    for(const item of items) if(item.offer_id) offerIds.push(item.offer_id);
     lastId=d?.result?.last_id||'';
     if(!lastId||items.length<1000) break;
   }
-  log('Товаров найдено: '+allIds.length);
-  if(!allIds.length) return;
+  log('offer_ids: '+offerIds.length);
 
-  // Шаг 2: получаем цены батчами по 100 через v4/product/info/list
-  // (v2 тоже пробуем если v4 не работает)
-  for(let i=0;i<allIds.length;i+=100){
-    const batch=allIds.slice(i,i+100);
-    let data=null;
+  // Получаем цены батчами по 100 через /v2/product/info
+  // offer_id в транзакциях совпадает с offer_id в каталоге
+  let priceCount=0;
+  for(let i=0;i<offerIds.length;i+=100){
+    const batch=offerIds.slice(i,i+100);
     try {
-      data=await ozon('/v4/product/info/list',{product_id:batch});
-    } catch(e){
-      try { data=await ozon('/v2/product/info/list',{product_id:batch}); } catch(e2){}
-    }
-    if(!data) continue;
-    const items=data?.result?.items||data?.items||[];
-    if(i===0 && items.length>0) log('Пример цены: price='+items[0]?.price+' old_price='+items[0]?.old_price+' offer_id='+items[0]?.offer_id);
-    for(const item of items){
-      // price — это цена которую ты загружаешь в Ozon (твоя цена)
-      const myPrice=parseFloat(item.price||0);
-      const info={price:myPrice, name:item.name||''};
-      if(item.offer_id) priceMap[String(item.offer_id)]=info;
-      if(item.id) priceMap[String(item.id)]=info;
-      if(item.sku) priceMap[String(item.sku)]=info;
-    }
+      const d=await ozon('/v2/product/info/list',{offer_id:batch});
+      const items=d?.result?.items||[];
+      if(i===0 && items.length>0){
+        const s=items[0];
+        log('Пример: offer_id='+s.offer_id+' price='+s.price+' old_price='+s.old_price);
+      }
+      for(const item of items){
+        const myPrice=parseFloat(item.price||0);
+        const info={price:myPrice, name:item.name||''};
+        if(item.offer_id) priceMap[String(item.offer_id)]=info;
+        if(item.id) priceMap[String(item.id)]=info;
+        if(item.sku) priceMap[String(item.sku)]=info;
+        if(item.sku) priceMap[String(item.sku)]=info;
+        priceCount++;
+      }
+    } catch(e){ log('info/list err: '+e.message); break; }
+    if(i===0) log('Цен в первом батче: '+priceCount);
   }
-  log('Цен загружено: '+Object.keys(priceMap).length);
+  log('Цен итого: '+priceCount);
 }
 
 async function fetchData(){
@@ -141,7 +147,7 @@ async function fetchData(){
     const priceMap={};
     await loadPrices(priceMap);
 
-    log('Загружаем транзакции...');
+    log('Транзакции...');
     let allOps=[], page=1;
     while(page<=10){
       const d=await ozon('/v3/finance/transaction/list',{filter:{date:{from:dateFrom,to:dateTo},operation_type:[],posting_number:'',transaction_type:'all'},page,page_size:500});
@@ -151,27 +157,32 @@ async function fetchData(){
       if(ops.length<500) break;
       page++;
     }
-    log('Операций: '+allOps.length);
+    // Логируем пример item из транзакции
+    const sOp=allOps.find(op=>(op.items||[]).length>0);
+    if(sOp){ const si=sOp.items[0]; log('TX item: sku='+si.sku+' offer_id='+si.offer_id+' name='+String(si.name||'').slice(0,30)+' payout='+si.payout); }
 
     const agg={};
     for(const op of allOps){
       const t=op.operation_type||'';
       if(!t.toLowerCase().includes('sale')&&!t.includes('AgentDelivered')&&!t.includes('Compensation')) continue;
       for(const item of op.items||[]){
-        const key=String(item.sku||item.offer_id||item.product_id||'');
-        if(!key) continue;
+        const keys=[String(item.sku||''),String(item.offer_id||''),String(item.product_id||'')].filter(Boolean);
+        const key=keys[0]; if(!key) continue;
         const payout=parseFloat(item.payout||0);
         const qty=parseFloat(item.quantity||1);
-        const pi=priceMap[key]||priceMap[String(item.offer_id||'')]||priceMap[String(item.product_id||'')]||null;
+        const pi=keys.map(k=>priceMap[k]).find(Boolean)||null;
         const myPrice=pi?.price||0;
         const name=item.name||pi?.name||key;
-        if(!agg[key]) agg[key]={name,myPriceTotal:0,payoutTotal:0,qty:0};
+        if(!agg[key]) agg[key]={name,myPriceTotal:0,payoutTotal:0,qty:0,offer_id:item.offer_id||''};
         agg[key].payoutTotal+=payout;
         agg[key].myPriceTotal+=myPrice*qty;
         agg[key].qty+=qty;
       }
     }
     log('Позиций: '+Object.keys(agg).length);
+    // Сколько с ценой?
+    const withPrice=Object.values(agg).filter(p=>p.myPriceTotal>0).length;
+    log('С ценой: '+withPrice);
 
     allProducts=Object.entries(agg).filter(([,p])=>p.qty>0).map(([key,p])=>{
       const avgPayout=p.payoutTotal/p.qty;
@@ -180,7 +191,7 @@ async function fetchData(){
       return {key,name:p.name,total:p.payoutTotal,avgPayout,avgMyPrice,margin,diff:avgPayout-avgMyPrice,qty:p.qty};
     });
 
-    if(!allProducts.length){ showError('Нет данных о продажах.'); document.getElementById('loadBtn').disabled=false; document.getElementById('loadBtn').textContent='Загрузить статистику →'; return; }
+    if(!allProducts.length){ showError('Нет данных.'); document.getElementById('loadBtn').disabled=false; document.getElementById('loadBtn').textContent='Загрузить статистику →'; return; }
     await sendTelegram();
     renderResults();
     document.getElementById('settings').style.display='none';
@@ -199,7 +210,7 @@ async function sendTelegram(){
   const fmt=n=>n!=null?Math.round(n).toLocaleString('ru-RU'):'—';
   const fp=n=>n==null?'—':(n>0?'+':'')+n.toFixed(1)+'%';
   const md=m=>m==null?'⚪':m>=0?'🟢':'🔴';
-  let msg=`📊 <b>Ариадна · Ozon · ${new Date().toLocaleDateString('ru-RU')}</b>\n30 дней\n\n💰 Выплаты: <b>${fmt(tp)} ₽</b>\n📈 Наценка: <b>${fp(ov)}</b>\n📦 Позиций: ${allProducts.length}\n─────────────────\n`;
+  let msg=`📊 <b>Ариадна · Ozon · ${VERSION} · ${new Date().toLocaleDateString('ru-RU')}</b>\n30 дней\n\n💰 Выплаты: <b>${fmt(tp)} ₽</b>\n📈 Наценка: <b>${fp(ov)}</b>\n📦 Позиций: ${allProducts.length}\n─────────────────\n`;
   for(let i=0;i<Math.min(sorted.length,25);i++){
     const p=sorted[i];
     const nm=p.name.length>35?p.name.slice(0,35)+'…':p.name;
@@ -243,4 +254,3 @@ function renderResults(){
 </script>
 </body>
 </html>
- 
