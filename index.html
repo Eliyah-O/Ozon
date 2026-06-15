@@ -13,11 +13,10 @@ body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; c
 .card { background: #1a1a2e; border-radius: 16px; padding: 20px; border: 1px solid #2a2a3e; margin-bottom: 14px; }
 label { display: block; margin-bottom: 4px; font-size: 12px; color: #9ca3af; font-weight: 500; }
 input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f12; border: 1px solid #2a2a3e; color: #e8e8f0; font-size: 15px; margin-bottom: 14px; outline: none; }
-.btn { width: 100%; padding: 16px; background: linear-gradient(135deg,#005bff,#0095ff); border: none; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
-.btn2 { width: 100%; padding: 14px; background: #1a2a3a; border: 1px solid #2a2a3e; border-radius: 14px; color: #9ca3af; font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
-.btn:disabled, .btn2:disabled { opacity: 0.5; cursor: not-allowed; }
-.error { background: #2a1010; border: 1px solid #5a1010; border-radius: 12px; padding: 14px; color: #f87171; font-size: 13px; margin-bottom: 14px; line-height: 1.5; display:none; }
-.debug { background: #0f1a0f; border: 1px solid #1a3a1a; border-radius: 12px; padding: 12px; margin-bottom: 14px; font-family: monospace; font-size: 11px; color: #4ade80; display:none; word-break: break-all; max-height: 300px; overflow-y: auto; }
+.btn { width: 100%; padding: 16px; background: linear-gradient(135deg,#005bff,#0095ff); border: none; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+.btn:disabled { background: #1a2a3a; cursor: not-allowed; }
+.error { background: #2a1010; border: 1px solid #5a1010; border-radius: 12px; padding: 14px; color: #f87171; font-size: 13px; margin-bottom: 14px; display:none; }
+.debug { background: #0f1a0f; border: 1px solid #1a3a1a; border-radius: 12px; padding: 12px; margin-bottom: 14px; font-family: monospace; font-size: 11px; color: #4ade80; display:none; word-break: break-all; max-height: 200px; overflow-y: auto; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 .sum-card { background: #1a1a2e; border-radius: 14px; padding: 16px; border: 1px solid #2a2a3e; }
 .sum-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
@@ -42,31 +41,21 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <body>
 <div class="header">
   <div class="logo">O</div>
-  <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics</div>
-    <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
-  </div>
+  <div><div style="font-size:16px;font-weight:700">Ozon Analytics</div><div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div></div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
 </div>
-
 <div class="body">
   <div id="settings">
     <div class="card">
-      <label>Client ID</label>
-      <input type="text" inputmode="numeric" id="clientId" placeholder="2375416">
-      <label>API ключ</label>
-      <input type="password" id="apiKey" placeholder="••••••••••••">
-      <label>Telegram Bot Token</label>
-      <input type="text" id="tgToken" placeholder="8819121520:AAG...">
-      <label>Telegram Chat ID</label>
-      <input type="text" id="tgChatId" placeholder="8819121520">
+      <label>Client ID</label><input type="text" inputmode="numeric" id="clientId" placeholder="2375416">
+      <label>API ключ</label><input type="password" id="apiKey" placeholder="••••••••••••">
+      <label>Telegram Bot Token</label><input type="text" id="tgToken" placeholder="8819121520:AAG...">
+      <label>Telegram Chat ID</label><input type="text" id="tgChatId" placeholder="8819121520">
     </div>
     <div class="debug" id="debugLog"></div>
     <div class="error" id="errorBox"></div>
     <button class="btn" id="loadBtn" onclick="fetchData()">Загрузить статистику →</button>
-    <button class="btn2" id="testBtn" onclick="testPrices()">🔍 Диагностика цен</button>
   </div>
-
   <div id="results">
     <div class="grid2">
       <div class="sum-card"><div class="sum-label">ВЫПЛАТЫ ИТОГО</div><div class="sum-val" id="totalAccrual" style="color:#00d4ff"></div></div>
@@ -80,7 +69,6 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
     <div id="prodList"></div>
   </div>
 </div>
-
 <script>
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
@@ -97,86 +85,46 @@ async function ozon(endpoint, body){
   if(!r.ok) throw new Error('HTTP '+r.status+' '+endpoint);
   return r.json();
 }
-
-// Диагностика — пробуем разные endpoints для цен
-async function testPrices(){
-  if(!cid()||!akey()){ showError('Введите Client ID и API ключ'); return; }
-  saveCreds();
-  document.getElementById('debugLog').innerHTML='';
-  document.getElementById('errorBox').style.display='none';
-  document.getElementById('testBtn').disabled=true;
-  log('=== ДИАГНОСТИКА ЦЕН ===');
-
-  const endpoints=[
-    ['/v5/product/info/prices', {filter:{visibility:'ALL'},last_id:'',limit:5}],
-    ['/v4/product/info/prices', {filter:{visibility:'ALL'},last_id:'',limit:5}],
-    ['/v1/product/list',        {filter:{visibility:'ALL'},last_id:'',limit:5}],
-    ['/v3/product/list',        {filter:{visibility:'ALL'},last_id:'',limit:5}],
-    ['/v2/product/info/prices', {filter:{visibility:'ALL'},last_id:'',limit:5}],
-  ];
-
-  for(const [ep, body] of endpoints){
-    try {
-      const d=await ozon(ep, body);
-      const items=d?.result?.items||d?.result?.products||[];
-      log(ep+' → '+items.length+' items');
-      if(items.length>0){
-        log('Первый: '+JSON.stringify(items[0]).slice(0,400));
-      } else {
-        log('Ответ: '+JSON.stringify(d).slice(0,200));
-      }
-    } catch(e){
-      log(ep+' → ОШИБКА: '+e.message);
-    }
-  }
-  log('=== ГОТОВО — скинь скриншот ===');
-  document.getElementById('testBtn').disabled=false;
-}
-
 async function tg(text){ const token=document.getElementById('tgToken').value; const chatId=document.getElementById('tgChatId').value; if(!token||!chatId) return; await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML'})}); }
 
 async function loadPrices(priceMap){
-  // Пробуем v5 потом v4
-  for(const ep of ['/v5/product/info/prices','/v4/product/info/prices']){
-    try {
-      let lastId='', count=0;
-      for(let i=0;i<20;i++){
-        const d=await ozon(ep,{filter:{visibility:'ALL'},last_id:lastId,limit:1000});
-        const items=d?.result?.items||[];
-        for(const item of items){
-          const p=item.price||{};
-          // Пробуем все поля цены
-          const myPrice=parseFloat(p.price||p.min_price||p.marketing_price||p.old_price||0);
-          const info={price:myPrice, name:item.name||''};
-          if(item.offer_id) priceMap[String(item.offer_id)]=info;
-          if(item.product_id) priceMap[String(item.product_id)]=info;
-          if(item.sku) priceMap[String(item.sku)]=info;
-          count++;
-        }
-        lastId=d?.result?.last_id||'';
-        if(!lastId||items.length<1000) break;
-      }
-      if(count>0){ log('Цены через '+ep+': '+count); return; }
-    } catch(e){ log(ep+' ошибка: '+e.message); }
+  // Шаг 1: получаем все product_id через v3/product/list
+  log('Получаем список товаров...');
+  const allIds=[];
+  let lastId='';
+  for(let i=0;i<20;i++){
+    const d=await ozon('/v3/product/list',{filter:{visibility:'ALL'},last_id:lastId,limit:1000});
+    const items=d?.result?.items||[];
+    for(const item of items) if(item.product_id) allIds.push(item.product_id);
+    lastId=d?.result?.last_id||'';
+    if(!lastId||items.length<1000) break;
   }
+  log('Товаров найдено: '+allIds.length);
+  if(!allIds.length) return;
 
-  // Fallback: product/list + info
-  try {
-    log('Пробуем product/list...');
-    const d=await ozon('/v3/product/list',{filter:{visibility:'ALL'},last_id:'',limit:1000});
-    const ids=(d?.result?.items||[]).map(i=>i.product_id).filter(Boolean).slice(0,100);
-    if(ids.length>0){
-      const info=await ozon('/v2/product/info/list',{product_id:ids});
-      for(const item of info?.result?.items||[]){
-        const myPrice=parseFloat(item.price||0);
-        const inf={price:myPrice,name:item.name||''};
-        if(item.offer_id) priceMap[String(item.offer_id)]=inf;
-        if(item.id) priceMap[String(item.id)]=inf;
-        if(item.sku) priceMap[String(item.sku)]=inf;
-      }
-      log('Цены через product/info/list: '+Object.keys(priceMap).length);
+  // Шаг 2: получаем цены батчами по 100 через v4/product/info/list
+  // (v2 тоже пробуем если v4 не работает)
+  for(let i=0;i<allIds.length;i+=100){
+    const batch=allIds.slice(i,i+100);
+    let data=null;
+    try {
+      data=await ozon('/v4/product/info/list',{product_id:batch});
+    } catch(e){
+      try { data=await ozon('/v2/product/info/list',{product_id:batch}); } catch(e2){}
     }
-  } catch(e){ log('product/list ошибка: '+e.message); }
+    if(!data) continue;
+    const items=data?.result?.items||data?.items||[];
+    if(i===0 && items.length>0) log('Пример цены: price='+items[0]?.price+' old_price='+items[0]?.old_price+' offer_id='+items[0]?.offer_id);
+    for(const item of items){
+      // price — это цена которую ты загружаешь в Ozon (твоя цена)
+      const myPrice=parseFloat(item.price||0);
+      const info={price:myPrice, name:item.name||''};
+      if(item.offer_id) priceMap[String(item.offer_id)]=info;
+      if(item.id) priceMap[String(item.id)]=info;
+      if(item.sku) priceMap[String(item.sku)]=info;
+    }
+  }
+  log('Цен загружено: '+Object.keys(priceMap).length);
 }
 
 async function fetchData(){
@@ -190,10 +138,8 @@ async function fetchData(){
   const dateTo=now.toISOString().replace('Z','+00:00');
   const dateFrom=new Date(now-30*24*60*60*1000).toISOString().replace('Z','+00:00');
   try {
-    log('Загружаем цены...');
     const priceMap={};
     await loadPrices(priceMap);
-    log('Цен в карте: '+Object.keys(priceMap).length);
 
     log('Загружаем транзакции...');
     let allOps=[], page=1;
@@ -235,7 +181,6 @@ async function fetchData(){
     });
 
     if(!allProducts.length){ showError('Нет данных о продажах.'); document.getElementById('loadBtn').disabled=false; document.getElementById('loadBtn').textContent='Загрузить статистику →'; return; }
-
     await sendTelegram();
     renderResults();
     document.getElementById('settings').style.display='none';
