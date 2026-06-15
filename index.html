@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v10</title>
+<title>Ozon Analytics v11</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v10</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v11</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -74,7 +74,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v10';
+const VERSION='v11';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -118,7 +118,7 @@ async function loadPrices(priceMap){
     for(const item of items){
       // Цена продавца в v5 — поле price.price (строка)
       const p=item.price||{};
-      const myPrice=parseFloat(p.price||p.min_price||p.marketing_price||p.old_price||0);
+      const myPrice=parseFloat(String(p.price||p.marketing_seller_price||p.min_price||p.old_price||p.retail_price||0).replace(',','.'));
       const info={price:myPrice, name:item.name||''};
       const keys=[item.offer_id, item.product_id, item.sku].filter(Boolean).map(String);
       keys.forEach(k=>priceMap[k]=info);
@@ -161,6 +161,11 @@ async function fetchData(){
     if(sOp){
       const si=sOp.items[0];
       log('TX item: '+JSON.stringify(si).slice(0,300));
+      log('TX offer_id='+si.offer_id+' sku='+si.sku);
+      // Пробуем найти цену вручную
+      const manualKey=String(si.offer_id||si.sku||'');
+      const found=Object.keys(priceMap).find(k=>k===manualKey||k.includes(manualKey)||manualKey.includes(k));
+      log('Найден ключ в priceMap: '+(found||'НЕТ')+' → '+(found?priceMap[found]?.price:'—'));
       const testKeys=[String(si.sku||''),String(si.offer_id||''),String(si.product_id||'')].filter(Boolean);
       log('TX keys: '+testKeys.join(', '));
       testKeys.forEach(k=>log('priceMap['+k+']='+JSON.stringify(priceMap[k]||null)));
