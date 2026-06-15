@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v13</title>
+<title>Ozon Analytics v14</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v13</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v14</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -75,7 +75,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v13';
+const VERSION='v14';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -94,7 +94,7 @@ async function ozon(endpoint, body){
 async function tg(text){ const token=document.getElementById('tgToken').value; const chatId=document.getElementById('tgChatId').value; if(!token||!chatId) return; await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML'})}); }
 
 async function loadPrices(priceMap){
-  // v5 возвращает комиссии. Используем v2/product/info для реальных цен.
+  // v3/product/info/list возвращает price (твоя цена) по массиву product_id
   log('Список товаров...');
   const productIds=[];
   let lastId='';
@@ -106,31 +106,31 @@ async function loadPrices(priceMap){
     if(!lastId||items.length<1000) break;
   }
   log('Товаров: '+productIds.length);
+
   let priceCount=0;
-  // Батчи по 10 параллельных запросов
-  for(let i=0;i<productIds.length;i+=10){
-    const batch=productIds.slice(i,i+10);
-    const results=await Promise.all(batch.map(pid=>
-      ozon('/v2/product/info',{product_id:pid}).catch(()=>null)
-    ));
-    for(const d of results){
-      if(!d) continue;
-      const item=d?.result||d;
-      if(priceCount===0){
-        log('v2/info sample: price='+item.price+' offer_id='+item.offer_id+' name='+String(item.name||'').slice(0,30));
-      }
+  // v3/product/info/list принимает до 1000 product_id за раз
+  for(let i=0;i<productIds.length;i+=1000){
+    const batch=productIds.slice(i,i+1000);
+    const d=await ozon('/v3/product/info/list',{product_id:batch});
+    const items=d?.result?.items||[];
+    if(i===0 && items.length>0){
+      const s=items[0];
+      log('Пример: price='+s.price+' offer_id='+s.offer_id);
+    }
+    for(const item of items){
       const myPrice=parseFloat(String(item.price||0).replace(',','.'));
-      const info={price:myPrice,name:item.name||''};
+      const netPrice=parseFloat(String(item.min_price||0).replace(',','.'));
+      const info={price:myPrice, netPrice, name:item.name||''};
       if(item.offer_id) priceMap[String(item.offer_id)]=info;
       if(item.id) priceMap[String(item.id)]=info;
       if(item.sku) priceMap[String(item.sku)]=info;
+      // sources содержит sku маркетплейса
+      if(item.sources) for(const src of item.sources) if(src.sku) priceMap[String(src.sku)]=info;
       priceCount++;
     }
   }
   log('Цен: '+priceCount+' (>0: '+Object.values(priceMap).filter(p=>p.price>0).length+')');
 }
-
-
 
 // Полная диагностика — перебираем ВСЕ методы получения цен
 async function diagnose(){
