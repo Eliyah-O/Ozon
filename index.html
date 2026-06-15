@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v21</title>
+<title>Ozon Analytics v22</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v21</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v22</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -62,10 +62,11 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
     <button class="btn" id="diagBtn" onclick="diagnose()" style="margin-top:10px;background:#1a2a3a">🔍 Найти метод цен</button>
   </div>
   <div id="results">
-    <div class="grid2">
-      <div class="sum-card"><div class="sum-label">ВЫПЛАТЫ ИТОГО</div><div class="sum-val" id="totalAccrual" style="color:#00d4ff"></div></div>
-      <div class="sum-card"><div class="sum-label">НАЦЕНКА ОБЩАЯ</div><div class="sum-val" id="totalMargin"></div></div>
+    <div class="grid2" style="margin-bottom:12px">
+      <div class="sum-card"><div class="sum-label">ВСЕГО НАЧИСЛЕНО</div><div class="sum-val" id="totalGross" style="color:#9ca3af;font-size:18px"></div></div>
+      <div class="sum-card"><div class="sum-label">ЧИСТЫМИ НА СЧЁТ</div><div class="sum-val" id="totalAccrual" style="color:#00d4ff"></div></div>
     </div>
+    <div class="sum-card" style="margin-bottom:16px;text-align:center"><div class="sum-label">НАЦЕНКА ОБЩАЯ (от загруженной цены)</div><div class="sum-val" id="totalMargin"></div></div>
     <div class="tabs">
       <button class="tab active" onclick="sortBy('revenue',this)">По выплате</button>
       <button class="tab" onclick="sortBy('margin',this)">По наценке</button>
@@ -75,7 +76,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v21';
+const VERSION='v22';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -225,6 +226,7 @@ async function fetchData(){
     // amount уже с учётом знаков: продажа +, комиссии/логистика -
     // Группируем по posting_number, суммируем amount, привязываем товар по items
     const postingNet={};   // posting_number -> чистая сумма (amount всех операций)
+    const postingGross={}; // posting_number -> начислено (accruals_for_sale продаж)
     const postingItems={}; // posting_number -> [{sku, name, qty}]
 
     for(const op of allOps){
@@ -235,6 +237,7 @@ async function fetchData(){
         // Запоминаем товары постинга (только из операций продажи)
         const t=(op.operation_type||'').toLowerCase();
         if((t.includes('sale')||t.includes('agentdelivered')) && (op.items||[]).length){
+          postingGross[pn]=(postingGross[pn]||0)+parseFloat(op.accruals_for_sale||0);
           if(!postingItems[pn]) postingItems[pn]=op.items.map(it=>({
             sku:String(it.sku||it.offer_id||it.product_id||''),
             name:it.name||'',
@@ -249,27 +252,33 @@ async function fetchData(){
     for(const pn in postingItems){
       const items=postingItems[pn];
       const net=postingNet[pn]||0;
+      const gross=postingGross[pn]||0;
       const totalQty=items.reduce((s,it)=>s+it.qty,0)||1;
       for(const it of items){
         const key=it.sku; if(!key) continue;
         const payout=net*(it.qty/totalQty);
+        const grossShare=gross*(it.qty/totalQty);
         const pi=priceMap[key]||null;
         const myPrice=pi?.price||0;
         const name=it.name||pi?.name||key;
-        if(!agg[key]) agg[key]={name,myPriceTotal:0,payoutTotal:0,qty:0};
+        if(!agg[key]) agg[key]={name,myPriceTotal:0,payoutTotal:0,grossTotal:0,qty:0};
         agg[key].payoutTotal+=payout;
+        agg[key].grossTotal+=grossShare;
         agg[key].myPriceTotal+=myPrice*it.qty;
         agg[key].qty+=it.qty;
       }
     }
 
-        log('Позиций: '+Object.keys(agg).length+', с ценой: '+withPrice);
+        const withPrice=Object.values(agg).filter(p=>p.myPriceTotal>0).length;
+    log('Позиций: '+Object.keys(agg).length+', с ценой: '+withPrice);
+    if(false) log('Позиций: '+Object.keys(agg).length+', с ценой: '+withPrice);
 
     allProducts=Object.entries(agg).filter(([,p])=>p.qty>0).map(([key,p])=>{
       const avgPayout=p.payoutTotal/p.qty;
       const avgMyPrice=p.myPriceTotal/p.qty;
       const margin=avgMyPrice>0?(avgPayout-avgMyPrice)/avgMyPrice*100:null;
-      return {key,name:p.name,total:p.payoutTotal,avgPayout,avgMyPrice,margin,diff:avgPayout-avgMyPrice,qty:p.qty};
+      const avgGross=p.grossTotal/p.qty;
+      return {key,name:p.name,total:p.payoutTotal,grossTotal:p.grossTotal,avgGross,avgPayout,avgMyPrice,margin,diff:avgPayout-avgMyPrice,qty:p.qty};
     });
 
     if(!allProducts.length){ showError('Нет данных.'); document.getElementById('loadBtn').disabled=false; document.getElementById('loadBtn').textContent='Загрузить статистику →'; return; }
@@ -310,6 +319,8 @@ function renderResults(){
   const tp=allProducts.reduce((s,p)=>s+p.total,0);
   const tm=allProducts.reduce((s,p)=>s+p.avgMyPrice*p.qty,0);
   const ov=tm>0?(tp-tm)/tm*100:null;
+  const tg=allProducts.reduce((s,p)=>s+(p.grossTotal||0),0);
+  document.getElementById('totalGross').textContent=fmt(tg)+' ₽';
   document.getElementById('totalAccrual').textContent=fmt(tp)+' ₽';
   document.getElementById('totalMargin').textContent=fmtPct(ov);
   document.getElementById('totalMargin').style.color=mc(ov);
@@ -321,11 +332,11 @@ function renderResults(){
       </div>
       <div class="grid3">
         <div class="mini"><div class="mini-label">МОЯ ЦЕНА</div><div class="mini-val">${fmt(p.avgMyPrice)} ₽</div></div>
-        <div class="mini"><div class="mini-label">ВЫПЛАТА/шт</div><div class="mini-val" style="color:#00d4ff">${fmt(p.avgPayout)} ₽</div></div>
+        <div class="mini"><div class="mini-label">ЧИСТЫМИ/шт</div><div class="mini-val" style="color:#00d4ff">${fmt(p.avgPayout)} ₽</div></div>
         <div class="mini"><div class="mini-label">ПРОДАНО</div><div class="mini-val">${Math.round(p.qty)} шт</div></div>
       </div>
       <div class="diff-row">
-        <span style="font-size:11px;color:#6b7280">Цена → выплата</span>
+        <span style="font-size:11px;color:#6b7280">Начислено/шт: ${fmt(p.avgGross)} ₽</span>
         <span style="font-size:13px;font-weight:600;color:${mc(p.margin)}">${p.diff>=0?'+':''}${fmt(p.diff)} ₽/шт</span>
       </div>
     </div>
