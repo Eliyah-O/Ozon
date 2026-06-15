@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v8</title>
+<title>Ozon Analytics v9</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
 .header { background: linear-gradient(135deg,#1a1a2e,#16213e); border-bottom: 1px solid #2a2a3e; padding: 16px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; }
 .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg,#005bff,#00d4ff); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: #fff; flex-shrink: 0; }
-.ver { font-size: 9px; color: #005bff; background: #001a4d; border-radius: 4px; padding: 2px 5px; margin-left: 4px; }
+.ver { font-size: 13px; font-weight: 700; color: #00d4ff; background: #001a4d; border-radius: 6px; padding: 3px 8px; margin-left: 6px; }
 .body { padding: 20px; max-width: 600px; margin: 0 auto; }
 .card { background: #1a1a2e; border-radius: 16px; padding: 20px; border: 1px solid #2a2a3e; margin-bottom: 14px; }
 label { display: block; margin-bottom: 4px; font-size: 12px; color: #9ca3af; font-weight: 500; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v8</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v9</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -74,7 +74,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION = 'v8';
+const VERSION='v9';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -93,44 +93,44 @@ async function ozon(endpoint, body){
 async function tg(text){ const token=document.getElementById('tgToken').value; const chatId=document.getElementById('tgChatId').value; if(!token||!chatId) return; await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML'})}); }
 
 async function loadPrices(priceMap){
-  // Получаем offer_ids из product/list, потом цены через product/info по offer_id
-  log('Список товаров...');
-  const offerIds=[];
-  let lastId='';
+  // v5/product/info/prices работает но возвращает комиссии
+  // Структура из диагностики: items[].offer_id + items[].price (объект с полями)
+  // Попробуем прочитать все поля и залогировать
+  log('Загружаем цены (v5)...');
+  let lastId='', total=0;
   for(let i=0;i<20;i++){
-    const d=await ozon('/v3/product/list',{filter:{visibility:'ALL'},last_id:lastId,limit:1000});
+    const d=await ozon('/v5/product/info/prices',{filter:{visibility:'ALL'},last_id:lastId,limit:1000});
     const items=d?.result?.items||[];
-    for(const item of items) if(item.offer_id) offerIds.push(item.offer_id);
+    if(i===0){
+      log('v5 items: '+items.length);
+      if(items.length>0){
+        // Логируем ВСЕ поля первого элемента
+        const s=items[0];
+        log('offer_id='+s.offer_id);
+        log('price obj='+JSON.stringify(s.price||{}).slice(0,300));
+        log('marketing_price='+s.marketing_price);
+        log('min_price='+s.min_price);
+        log('old_price='+s.old_price);
+      }
+    }
+    for(const item of items){
+      // В v5 цена продавца — это price.price (строка с числом)
+      const p=item.price||{};
+      // Пробуем все возможные поля
+      const myPrice=parseFloat(
+        p.price || p.marketing_price || p.min_price || p.old_price ||
+        item.marketing_price || item.min_price || item.old_price || 0
+      );
+      const info={price:myPrice, name:item.name||''};
+      if(item.offer_id) priceMap[String(item.offer_id)]=info;
+      if(item.product_id) priceMap[String(item.product_id)]=info;
+      if(item.sku) priceMap[String(item.sku)]=info;
+      total++;
+    }
     lastId=d?.result?.last_id||'';
     if(!lastId||items.length<1000) break;
   }
-  log('offer_ids: '+offerIds.length);
-
-  // Получаем цены батчами по 100 через /v2/product/info
-  // offer_id в транзакциях совпадает с offer_id в каталоге
-  let priceCount=0;
-  for(let i=0;i<offerIds.length;i+=100){
-    const batch=offerIds.slice(i,i+100);
-    try {
-      const d=await ozon('/v2/product/info/list',{offer_id:batch});
-      const items=d?.result?.items||[];
-      if(i===0 && items.length>0){
-        const s=items[0];
-        log('Пример: offer_id='+s.offer_id+' price='+s.price+' old_price='+s.old_price);
-      }
-      for(const item of items){
-        const myPrice=parseFloat(item.price||0);
-        const info={price:myPrice, name:item.name||''};
-        if(item.offer_id) priceMap[String(item.offer_id)]=info;
-        if(item.id) priceMap[String(item.id)]=info;
-        if(item.sku) priceMap[String(item.sku)]=info;
-        if(item.sku) priceMap[String(item.sku)]=info;
-        priceCount++;
-      }
-    } catch(e){ log('info/list err: '+e.message); break; }
-    if(i===0) log('Цен в первом батче: '+priceCount);
-  }
-  log('Цен итого: '+priceCount);
+  log('v5 итого записей: '+total+', цен >0: '+Object.values(priceMap).filter(p=>p.price>0).length);
 }
 
 async function fetchData(){
@@ -157,9 +157,17 @@ async function fetchData(){
       if(ops.length<500) break;
       page++;
     }
+
     // Логируем пример item из транзакции
     const sOp=allOps.find(op=>(op.items||[]).length>0);
-    if(sOp){ const si=sOp.items[0]; log('TX item: sku='+si.sku+' offer_id='+si.offer_id+' name='+String(si.name||'').slice(0,30)+' payout='+si.payout); }
+    if(sOp){
+      const si=sOp.items[0];
+      log('TX item keys: '+Object.keys(si).join(','));
+      log('TX sku='+si.sku+' offer_id='+si.offer_id+' payout='+si.payout);
+      // Проверяем совпадение
+      const testKey=String(si.sku||si.offer_id||'');
+      log('В priceMap['+testKey+']: '+(priceMap[testKey]?.price||'НЕТ'));
+    }
 
     const agg={};
     for(const op of allOps){
@@ -170,19 +178,17 @@ async function fetchData(){
         const key=keys[0]; if(!key) continue;
         const payout=parseFloat(item.payout||0);
         const qty=parseFloat(item.quantity||1);
-        const pi=keys.map(k=>priceMap[k]).find(Boolean)||null;
+        const pi=keys.map(k=>priceMap[k]).find(p=>p&&p.price>0)||keys.map(k=>priceMap[k]).find(Boolean)||null;
         const myPrice=pi?.price||0;
         const name=item.name||pi?.name||key;
-        if(!agg[key]) agg[key]={name,myPriceTotal:0,payoutTotal:0,qty:0,offer_id:item.offer_id||''};
+        if(!agg[key]) agg[key]={name,myPriceTotal:0,payoutTotal:0,qty:0};
         agg[key].payoutTotal+=payout;
         agg[key].myPriceTotal+=myPrice*qty;
         agg[key].qty+=qty;
       }
     }
-    log('Позиций: '+Object.keys(agg).length);
-    // Сколько с ценой?
     const withPrice=Object.values(agg).filter(p=>p.myPriceTotal>0).length;
-    log('С ценой: '+withPrice);
+    log('Позиций: '+Object.keys(agg).length+', с ценой: '+withPrice);
 
     allProducts=Object.entries(agg).filter(([,p])=>p.qty>0).map(([key,p])=>{
       const avgPayout=p.payoutTotal/p.qty;
