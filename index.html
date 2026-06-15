@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v9</title>
+<title>Ozon Analytics v10</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -17,7 +17,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 .btn { width: 100%; padding: 16px; background: linear-gradient(135deg,#005bff,#0095ff); border: none; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
 .btn:disabled { background: #1a2a3a; cursor: not-allowed; }
 .error { background: #2a1010; border: 1px solid #5a1010; border-radius: 12px; padding: 14px; color: #f87171; font-size: 13px; margin-bottom: 14px; display:none; }
-.debug { background: #0f1a0f; border: 1px solid #1a3a1a; border-radius: 12px; padding: 12px; margin-bottom: 14px; font-family: monospace; font-size: 11px; color: #4ade80; display:none; word-break: break-all; max-height: 220px; overflow-y: auto; }
+.debug { background: #0f1a0f; border: 1px solid #1a3a1a; border-radius: 12px; padding: 12px; margin-bottom: 14px; font-family: monospace; font-size: 11px; color: #4ade80; display:none; word-break: break-all; max-height: 250px; overflow-y: auto; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 .sum-card { background: #1a1a2e; border-radius: 14px; padding: 16px; border: 1px solid #2a2a3e; }
 .sum-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v9</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v10</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -74,7 +74,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v9';
+const VERSION='v10';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -93,44 +93,42 @@ async function ozon(endpoint, body){
 async function tg(text){ const token=document.getElementById('tgToken').value; const chatId=document.getElementById('tgChatId').value; if(!token||!chatId) return; await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML'})}); }
 
 async function loadPrices(priceMap){
-  // v5/product/info/prices работает но возвращает комиссии
-  // Структура из диагностики: items[].offer_id + items[].price (объект с полями)
-  // Попробуем прочитать все поля и залогировать
-  log('Загружаем цены (v5)...');
-  let lastId='', total=0;
-  for(let i=0;i<20;i++){
+  // Из диагностики v5 вернул: {"items":[{"acquiring":100,"product_id":1222502481,"offer_id":"534.662.900",...}]}
+  // items — прямо в корне, не в result!
+  log('Загружаем цены...');
+  let lastId='', total=0, page=0;
+  while(page<20){
     const d=await ozon('/v5/product/info/prices',{filter:{visibility:'ALL'},last_id:lastId,limit:1000});
-    const items=d?.result?.items||[];
-    if(i===0){
-      log('v5 items: '+items.length);
+    // Пробуем оба варианта структуры
+    const items=d?.result?.items || d?.items || [];
+    const nextId=d?.result?.last_id || d?.last_id || '';
+    if(page===0){
+      // Логируем сырой ответ для диагностики
+      log('v5 raw keys: '+Object.keys(d||{}).join(','));
+      log('v5 result keys: '+Object.keys(d?.result||{}).join(','));
+      log('v5 items count: '+items.length);
       if(items.length>0){
-        // Логируем ВСЕ поля первого элемента
         const s=items[0];
-        log('offer_id='+s.offer_id);
-        log('price obj='+JSON.stringify(s.price||{}).slice(0,300));
-        log('marketing_price='+s.marketing_price);
-        log('min_price='+s.min_price);
-        log('old_price='+s.old_price);
+        log('item keys: '+Object.keys(s).join(','));
+        log('offer_id='+s.offer_id+' product_id='+s.product_id);
+        if(s.price) log('price keys: '+Object.keys(s.price).join(','));
+        log('full item: '+JSON.stringify(s).slice(0,500));
       }
     }
     for(const item of items){
-      // В v5 цена продавца — это price.price (строка с числом)
+      // Цена продавца в v5 — поле price.price (строка)
       const p=item.price||{};
-      // Пробуем все возможные поля
-      const myPrice=parseFloat(
-        p.price || p.marketing_price || p.min_price || p.old_price ||
-        item.marketing_price || item.min_price || item.old_price || 0
-      );
+      const myPrice=parseFloat(p.price||p.min_price||p.marketing_price||p.old_price||0);
       const info={price:myPrice, name:item.name||''};
-      if(item.offer_id) priceMap[String(item.offer_id)]=info;
-      if(item.product_id) priceMap[String(item.product_id)]=info;
-      if(item.sku) priceMap[String(item.sku)]=info;
+      const keys=[item.offer_id, item.product_id, item.sku].filter(Boolean).map(String);
+      keys.forEach(k=>priceMap[k]=info);
       total++;
     }
-    lastId=d?.result?.last_id||'';
+    lastId=nextId;
     if(!lastId||items.length<1000) break;
+    page++;
   }
-  log('v5 итого записей: '+total+', цен >0: '+Object.values(priceMap).filter(p=>p.price>0).length);
+  log('Цен загружено: '+total+' (>0: '+Object.values(priceMap).filter(p=>p.price>0).length+')');
 }
 
 async function fetchData(){
@@ -162,11 +160,10 @@ async function fetchData(){
     const sOp=allOps.find(op=>(op.items||[]).length>0);
     if(sOp){
       const si=sOp.items[0];
-      log('TX item keys: '+Object.keys(si).join(','));
-      log('TX sku='+si.sku+' offer_id='+si.offer_id+' payout='+si.payout);
-      // Проверяем совпадение
-      const testKey=String(si.sku||si.offer_id||'');
-      log('В priceMap['+testKey+']: '+(priceMap[testKey]?.price||'НЕТ'));
+      log('TX item: '+JSON.stringify(si).slice(0,300));
+      const testKeys=[String(si.sku||''),String(si.offer_id||''),String(si.product_id||'')].filter(Boolean);
+      log('TX keys: '+testKeys.join(', '));
+      testKeys.forEach(k=>log('priceMap['+k+']='+JSON.stringify(priceMap[k]||null)));
     }
 
     const agg={};
