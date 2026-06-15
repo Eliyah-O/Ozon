@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v20</title>
+<title>Ozon Analytics v21</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v20</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v21</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -75,7 +75,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v20';
+const VERSION='v21';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -221,35 +221,49 @@ async function fetchData(){
     }
 
 
-    const agg={};
+    // Чистая выплата = сумма amount по ВСЕМ операциям постинга
+    // amount уже с учётом знаков: продажа +, комиссии/логистика -
+    // Группируем по posting_number, суммируем amount, привязываем товар по items
+    const postingNet={};   // posting_number -> чистая сумма (amount всех операций)
+    const postingItems={}; // posting_number -> [{sku, name, qty}]
+
     for(const op of allOps){
-      const t=op.operation_type||'';
-      // Берём операции продажи. Выплата = accruals_for_sale (на уровне операции)
-      const isSale=t.toLowerCase().includes('sale')||t.includes('AgentDelivered');
-      if(!isSale) continue;
-      const items=op.items||[];
-      if(!items.length) continue;
-      // accruals_for_sale — это начисление за продажу (цена покупателя),
-      // amount — итоговая сумма к выплате после удержаний
-      const opPayout=parseFloat(op.accruals_for_sale||op.amount||0);
-      const totalQty=items.reduce((s,it)=>s+parseFloat(it.quantity||1),0);
-      for(const item of items){
-        const keys=[String(item.sku||''),String(item.offer_id||''),String(item.product_id||'')].filter(Boolean);
-        const key=keys[0]; if(!key) continue;
-        const qty=parseFloat(item.quantity||1);
-        // Распределяем выплату операции пропорционально количеству
-        const payout=opPayout*(qty/totalQty);
-        const pi=keys.map(k=>priceMap[k]).find(p=>p&&p.price>0)||keys.map(k=>priceMap[k]).find(Boolean)||null;
-        const myPrice=pi?.price||0;
-        const name=item.name||pi?.name||key;
-        if(!agg[key]) agg[key]={name,myPriceTotal:0,payoutTotal:0,qty:0};
-        agg[key].payoutTotal+=payout;
-        agg[key].myPriceTotal+=myPrice*qty;
-        agg[key].qty+=qty;
+      const pn=op.posting?.posting_number || op.posting_number || '';
+      const amount=parseFloat(op.amount||0);
+      if(pn){
+        postingNet[pn]=(postingNet[pn]||0)+amount;
+        // Запоминаем товары постинга (только из операций продажи)
+        const t=(op.operation_type||'').toLowerCase();
+        if((t.includes('sale')||t.includes('agentdelivered')) && (op.items||[]).length){
+          if(!postingItems[pn]) postingItems[pn]=op.items.map(it=>({
+            sku:String(it.sku||it.offer_id||it.product_id||''),
+            name:it.name||'',
+            qty:parseFloat(it.quantity||1)
+          }));
+        }
       }
     }
-    const withPrice=Object.values(agg).filter(p=>p.myPriceTotal>0).length;
-    log('Позиций: '+Object.keys(agg).length+', с ценой: '+withPrice);
+
+    // Теперь раскидываем чистую выплату постинга по товарам пропорционально кол-ву
+    const agg={};
+    for(const pn in postingItems){
+      const items=postingItems[pn];
+      const net=postingNet[pn]||0;
+      const totalQty=items.reduce((s,it)=>s+it.qty,0)||1;
+      for(const it of items){
+        const key=it.sku; if(!key) continue;
+        const payout=net*(it.qty/totalQty);
+        const pi=priceMap[key]||null;
+        const myPrice=pi?.price||0;
+        const name=it.name||pi?.name||key;
+        if(!agg[key]) agg[key]={name,myPriceTotal:0,payoutTotal:0,qty:0};
+        agg[key].payoutTotal+=payout;
+        agg[key].myPriceTotal+=myPrice*it.qty;
+        agg[key].qty+=it.qty;
+      }
+    }
+
+        log('Позиций: '+Object.keys(agg).length+', с ценой: '+withPrice);
 
     allProducts=Object.entries(agg).filter(([,p])=>p.qty>0).map(([key,p])=>{
       const avgPayout=p.payoutTotal/p.qty;
