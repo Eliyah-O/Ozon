@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v18</title>
+<title>Ozon Analytics v19</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v18</span></div>
+    <div style="font-size:16px;font-weight:700">Ozon Analytics <span class="ver">v19</span></div>
     <div style="font-size:11px;color:#6b7280">Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -75,7 +75,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v18';
+const VERSION='v19';
 let allProducts=[], currentSort='revenue';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 window.onload=()=>{ document.getElementById('clientId').value=ls('oz_cid')||''; document.getElementById('apiKey').value=ls('oz_key')||''; document.getElementById('tgToken').value=ls('oz_tgt')||''; document.getElementById('tgChatId').value=ls('oz_tgc')||''; };
@@ -94,39 +94,7 @@ async function ozon(endpoint, body){
 async function tg(text){ const token=document.getElementById('tgToken').value; const chatId=document.getElementById('tgChatId').value; if(!token||!chatId) return; await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML'})}); }
 
 async function loadPrices(priceMap){
-  log('Тест структуры ответа...');
-  // Берём 1 product_id и логируем ВЕСЬ сырой ответ
-  let testId=null;
-  try {
-    const pl=await ozon('/v3/product/list',{filter:{visibility:'ALL'},last_id:'',limit:1});
-    testId=(pl?.result?.items||[])[0]?.product_id;
-    log('Тест product_id='+testId);
-  } catch(e){ log('list err: '+e.message); }
-
-  if(testId){
-    try {
-      const d=await ozon('/v3/product/info/list',{product_id:[testId]});
-      // Логируем сырой ответ целиком
-      log('RAW keys: '+Object.keys(d||{}).join(','));
-      log('result keys: '+Object.keys(d?.result||{}).join(','));
-      const items=d?.result?.items||d?.items||[];
-      log('items: '+items.length);
-      if(items.length>0){
-        const s=items[0];
-        log('item keys: '+Object.keys(s).join(','));
-        log('price='+s.price+' marketing_price='+s.marketing_price);
-        // Ищем поле с числом-ценой
-        for(const k in s){
-          if(k.includes('price') && s[k]) log('  '+k+'='+JSON.stringify(s[k]).slice(0,80));
-        }
-        log('sku='+s.sku+' fbo_sku='+s.fbo_sku+' fbs_sku='+s.fbs_sku);
-        log('sources='+JSON.stringify(s.sources||[]).slice(0,200));
-      }
-    } catch(e){ log('info/list err: '+e.message); }
-  }
-
-  // Теперь грузим все цены если структура понятна
-  log('Загрузка всех цен...');
+  log('Загрузка цен...');
   const productIds=[];
   let lastId='';
   for(let i=0;i<20;i++){
@@ -136,15 +104,14 @@ async function loadPrices(priceMap){
     lastId=d?.result?.last_id||'';
     if(!lastId||items.length<1000) break;
   }
-
   let priceCount=0;
   for(let i=0;i<productIds.length;i+=100){
     const batch=productIds.slice(i,i+100);
     try {
       const d=await ozon('/v3/product/info/list',{product_id:batch});
-      const items=d?.result?.items||d?.items||[];
+      const items=d?.result?.items||[];
       for(const item of items){
-        const myPrice=parseFloat(String(item.price||item.marketing_price||0).replace(',','.'));
+        const myPrice=parseFloat(String(item.price||0).replace(',','.'));
         const info={price:myPrice, name:item.name||''};
         [item.offer_id,item.id,item.product_id,item.sku,item.fbo_sku,item.fbs_sku].forEach(k=>{ if(k) priceMap[String(k)]=info; });
         if(item.sources) for(const src of item.sources){ if(src.sku) priceMap[String(src.sku)]=info; }
@@ -152,7 +119,7 @@ async function loadPrices(priceMap){
       }
     } catch(e){}
   }
-  log('Цен >0: '+priceCount+' / ключей: '+Object.keys(priceMap).length);
+  log('Цен загружено: '+priceCount);
 }
 
 
@@ -245,30 +212,35 @@ async function fetchData(){
       page++;
     }
 
-    // Логируем пример item из транзакции
-    const sOp=allOps.find(op=>(op.items||[]).length>0);
+    // Логируем структуру операции чтобы найти поле выплаты
+    const sOp=allOps.find(op=>(op.items||[]).length>0 && op.operation_type && op.operation_type.toLowerCase().includes('sale'));
     if(sOp){
+      log('OP keys: '+Object.keys(sOp).join(','));
+      log('OP type='+sOp.operation_type);
+      log('OP amount='+sOp.amount+' accruals_for_sale='+sOp.accruals_for_sale);
       const si=sOp.items[0];
-      log('TX item: '+JSON.stringify(si).slice(0,300));
-      log('TX offer_id='+si.offer_id+' sku='+si.sku);
-      // Пробуем найти цену вручную
-      const manualKey=String(si.offer_id||si.sku||'');
-      const found=Object.keys(priceMap).find(k=>k===manualKey||k.includes(manualKey)||manualKey.includes(k));
-      log('Найден ключ в priceMap: '+(found||'НЕТ')+' → '+(found?priceMap[found]?.price:'—'));
-      const testKeys=[String(si.sku||''),String(si.offer_id||''),String(si.product_id||'')].filter(Boolean);
-      log('TX keys: '+testKeys.join(', '));
-      testKeys.forEach(k=>log('priceMap['+k+']='+JSON.stringify(priceMap[k]||null)));
+      log('ITEM keys: '+Object.keys(si).join(','));
+      log('item.payout='+si.payout+' item.price='+si.price);
     }
 
     const agg={};
     for(const op of allOps){
       const t=op.operation_type||'';
-      if(!t.toLowerCase().includes('sale')&&!t.includes('AgentDelivered')&&!t.includes('Compensation')) continue;
-      for(const item of op.items||[]){
+      // Берём операции продажи. Выплата = accruals_for_sale (на уровне операции)
+      const isSale=t.toLowerCase().includes('sale')||t.includes('AgentDelivered');
+      if(!isSale) continue;
+      const items=op.items||[];
+      if(!items.length) continue;
+      // accruals_for_sale — это начисление за продажу (цена покупателя),
+      // amount — итоговая сумма к выплате после удержаний
+      const opPayout=parseFloat(op.accruals_for_sale||op.amount||0);
+      const totalQty=items.reduce((s,it)=>s+parseFloat(it.quantity||1),0);
+      for(const item of items){
         const keys=[String(item.sku||''),String(item.offer_id||''),String(item.product_id||'')].filter(Boolean);
         const key=keys[0]; if(!key) continue;
-        const payout=parseFloat(item.payout||0);
         const qty=parseFloat(item.quantity||1);
+        // Распределяем выплату операции пропорционально количеству
+        const payout=opPayout*(qty/totalQty);
         const pi=keys.map(k=>priceMap[k]).find(p=>p&&p.price>0)||keys.map(k=>priceMap[k]).find(Boolean)||null;
         const myPrice=pi?.price||0;
         const name=item.name||pi?.name||key;
