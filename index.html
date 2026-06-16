@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v34</title>
+<title>Ozon Analytics v35</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v34</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v35</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -78,13 +78,15 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v34';
+const VERSION='v35';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
 const fmt=n=>n!=null?Math.round(n).toLocaleString('ru-RU'):'—';
 const fmtPct=n=>n==null?'—':(n>0?'+':'')+n.toFixed(1)+'%';
 const mc=m=>m==null?'#888':m>=0?'#22c55e':'#ef4444';
+// Цвет для "ОТЛИЧИЕ ОТ РРЦ": ≥0 зелёный, 0..-20% жёлтый, ниже -20% красный
+const mcRrc=m=>m==null?'#888':m>=0?'#22c55e':m>=-20?'#eab308':'#ef4444';
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 function $(id){ return document.getElementById(id); }
 function cid(){ return $('clientId').value.trim(); }
@@ -339,7 +341,7 @@ function renderResults(){
   $('totalAccrual').textContent=fmt(tp)+' ₽';
   $('totalRrc').textContent=fmt(trrc)+' ₽';
   $('totalMargin').textContent=fmtPct(ov);
-  $('totalMargin').style.color=mc(ov);
+  $('totalMargin').style.color=mcRrc(ov);
   $('totalAds').textContent=fmt(adsTotal)+' ₽';
   $('prodList').innerHTML=sorted.map((p,i)=>`
     <div class="prod">
