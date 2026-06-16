@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v32</title>
+<title>Ozon Analytics v33</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v32</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v33</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -67,7 +67,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
       <div class="sum-card"><div class="sum-label">ЧИСТЫМИ НА СЧЁТ</div><div class="sum-val" id="totalAccrual" style="color:#00d4ff"></div></div>
       <div class="sum-card"><div class="sum-label">ПРОДАНО ПО РРЦ</div><div class="sum-val" id="totalRrc" style="color:#a78bfa"></div></div>
     </div>
-    <div class="sum-card" style="margin-bottom:16px;text-align:center"><div class="sum-label">НАЦЕНКА (от РРЦ)</div><div class="sum-val" id="totalMargin"></div></div>
+    <div class="sum-card" style="margin-bottom:16px;text-align:center"><div class="sum-label">ОТЛИЧИЕ ОТ РРЦ</div><div class="sum-val" id="totalMargin"></div></div>
     <div class="sum-card" style="margin-bottom:16px;text-align:center;background:#1a1410;border-color:#3a2a1a"><div class="sum-label" style="color:#f59e0b">РЕКЛАМА (общая, не по товарам)</div><div class="sum-val" id="totalAds" style="color:#f59e0b;font-size:18px"></div></div>
     <div class="tabs">
       <button class="tab active" onclick="sortBy('revenue',this)">По выплате</button>
@@ -78,7 +78,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v32';
+const VERSION='v33';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
