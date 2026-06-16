@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v36</title>
+<title>Ozon Analytics v37</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v36</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v37</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -73,12 +73,13 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
       <button class="tab active" onclick="sortBy('revenue',this)">По выплате</button>
       <button class="tab" onclick="sortBy('margin',this)">По наценке</button>
       <button class="tab" onclick="sortBy('qty',this)">По кол-ву</button>
+      <button class="tab" onclick="sortBy('date',this)">По дате</button>
     </div>
     <div id="prodList"></div>
   </div>
 </div>
 <script>
-const VERSION='v36';
+const VERSION='v37';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
@@ -87,6 +88,8 @@ const fmtPct=n=>n==null?'—':(n>0?'+':'')+n.toFixed(1)+'%';
 const mc=m=>m==null?'#888':m>=0?'#22c55e':'#ef4444';
 // Цвет для "ОТЛИЧИЕ ОТ РРЦ": ≥0 зелёный, 0..-20% жёлтый, ниже -20% красный
 const mcRrc=m=>m==null?'#888':m>=0?'#22c55e':m>=-20?'#eab308':'#ef4444';
+// ISO-дата → ДД.ММ.ГГ
+const fmtDate=s=>{ const d=new Date(s); return isNaN(d)?'':d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'}); };
 function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} }
 function $(id){ return document.getElementById(id); }
 function cid(){ return $('clientId').value.trim(); }
@@ -218,7 +221,7 @@ function aggregate(ops, priceMap){
   // Чистая выплата заказа = сумма amount всех его операций (продажа +, удержания -)
   // Начислено заказа = accruals_for_sale операций продажи (до вычета расходов)
   // Реклама не имеет привязки к товару — считаем отдельной общей суммой
-  const net={}, gross={}, items={};
+  const net={}, gross={}, items={}, dates={};
   adsTotal=0;
   for(const op of ops){
     const pn=op.posting?.posting_number || op.posting_number || '';
@@ -227,6 +230,9 @@ function aggregate(ops, priceMap){
     if(isAd(type)){ adsTotal+=amount; continue; } // реклама — мимо постингов
     if(!pn) continue;
     net[pn]=(net[pn]||0)+amount;
+    // Дата отгрузки заказа (берём дату из постинга или операции)
+    const d=op.posting?.order_date || op.posting?.delivery_date || op.operation_date || '';
+    if(d && !dates[pn]) dates[pn]=d;
     if(isSale(type) && (op.items||[]).length){
       gross[pn]=(gross[pn]||0)+(parseFloat(op.accruals_for_sale||0)||0);
       if(!items[pn]){
@@ -245,15 +251,18 @@ function aggregate(ops, priceMap){
     const list=items[pn];
     const payoutPn=net[pn]||0;
     const grossPn=gross[pn]||0;
+    const dt=dates[pn]||'';
     const totalQty=list.reduce((s,it)=>s+it.qty,0)||1;
     for(const it of list){
       const key=it.sku; if(!key) continue;
       const pi=priceMap[key]||null;
-      if(!agg[key]) agg[key]={name:it.name||pi?.name||key, article:pi?.article||'', myPriceTotal:0, payoutTotal:0, grossTotal:0, qty:0};
+      if(!agg[key]) agg[key]={name:it.name||pi?.name||key, article:pi?.article||'', myPriceTotal:0, payoutTotal:0, grossTotal:0, qty:0, lastDate:''};
       agg[key].payoutTotal+=payoutPn*(it.qty/totalQty);
       agg[key].grossTotal+=grossPn*(it.qty/totalQty);
       agg[key].myPriceTotal+=(pi?.price||0)*it.qty;
       agg[key].qty+=it.qty;
+      // Запоминаем самую свежую дату продажи товара
+      if(dt && dt>agg[key].lastDate) agg[key].lastDate=dt;
     }
   }
   return agg;
@@ -283,7 +292,7 @@ async function fetchData(){
       const avgRrc=avgMyPrice/2;            // РРЦ = моя цена ÷ 2
       const avgGross=p.grossTotal/p.qty;
       const margin=avgRrc>0?(avgPayout-avgRrc)/avgRrc*100:null;  // наценка от РРЦ
-      return {key, article:p.article||p.name, name:p.name, total:p.payoutTotal, avgPayout, avgGross, avgMyPrice, avgRrc, margin, diff:avgPayout-avgRrc, qty:p.qty};
+      return {key, article:p.article||p.name, name:p.name, total:p.payoutTotal, avgPayout, avgGross, avgMyPrice, avgRrc, margin, diff:avgPayout-avgRrc, qty:p.qty, lastDate:p.lastDate||''};
     });
 
     if(!allProducts.length){ showError('Нет данных за период.'); return; }
@@ -337,6 +346,7 @@ function renderResults(){
   const sorted=[...allProducts].sort((a,b)=>
     currentSort==='revenue'? b.total-a.total :
     currentSort==='margin' ? (b.margin??-1e9)-(a.margin??-1e9) :
+    currentSort==='date'   ? (b.lastDate||'').localeCompare(a.lastDate||'') :
                              b.qty-a.qty);
   $('totalAccrual').textContent=fmt(tp)+' ₽';
   $('totalRrc').textContent=fmt(trrc)+' ₽';
@@ -346,7 +356,7 @@ function renderResults(){
   $('prodList').innerHTML=sorted.map((p,i)=>`
     <div class="prod">
       <div class="prod-top">
-        <div><div class="prod-id">#${i+1} · ${p.article||p.key}</div><div class="prod-name">${p.name.length>50?p.name.slice(0,50)+'…':p.name}</div></div>
+        <div><div class="prod-id">#${i+1} · ${p.article||p.key}${p.lastDate?' · '+fmtDate(p.lastDate):''}</div><div class="prod-name">${p.name.length>50?p.name.slice(0,50)+'…':p.name}</div></div>
         <div class="badge" style="background:${mcRrc(p.margin)}22;border:1px solid ${mcRrc(p.margin)}44;color:${mcRrc(p.margin)}">${fmtPct(p.margin)}</div>
       </div>
       <div class="grid4">
