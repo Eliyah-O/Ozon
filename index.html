@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v29</title>
+<title>Ozon Analytics v30</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v29</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v30</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -76,7 +76,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v29';
+const VERSION='v30';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
@@ -135,9 +135,11 @@ async function loadCabinetName(){
   ];
   for(const [ep,pick] of tries){
     try {
-      const name=pick(await ozon(ep,{}));
+      const d=await ozon(ep,{});
+      log('cab '+ep+': '+JSON.stringify(d).slice(0,120));
+      const name=pick(d);
       if(name){ cabName=name; $('cabName').textContent=name; log('Кабинет: '+name); return; }
-    } catch(e){}
+    } catch(e){ log('cab '+ep+' ✗ '+e.message); }
   }
 }
 
@@ -267,6 +269,10 @@ async function fetchData(){
     await loadPrices(priceMap);
     await loadCabinetName();
     const ops=await loadTransactions();
+    // Диагностика: какие типы операций есть (ищем рекламу)
+    const types={};
+    ops.forEach(o=>{ const t=o.operation_type||'?'; types[t]=(types[t]||0)+1; });
+    log('Типы операций: '+Object.keys(types).join(', '));
     const agg=aggregate(ops, priceMap);
 
     const withPrice=Object.values(agg).filter(p=>p.myPriceTotal>0).length;
