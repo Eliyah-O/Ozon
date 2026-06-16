@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v35</title>
+<title>Ozon Analytics v36</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v35</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v36</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -78,7 +78,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v35';
+const VERSION='v36';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
@@ -347,7 +347,7 @@ function renderResults(){
     <div class="prod">
       <div class="prod-top">
         <div><div class="prod-id">#${i+1} · ${p.article||p.key}</div><div class="prod-name">${p.name.length>50?p.name.slice(0,50)+'…':p.name}</div></div>
-        <div class="badge" style="background:${mc(p.margin)}22;border:1px solid ${mc(p.margin)}44;color:${mc(p.margin)}">${fmtPct(p.margin)}</div>
+        <div class="badge" style="background:${mcRrc(p.margin)}22;border:1px solid ${mcRrc(p.margin)}44;color:${mcRrc(p.margin)}">${fmtPct(p.margin)}</div>
       </div>
       <div class="grid4">
         <div class="mini"><div class="mini-label">МОЯ ЦЕНА</div><div class="mini-val">${fmt(p.avgMyPrice)} ₽</div></div>
