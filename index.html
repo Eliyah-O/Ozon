@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v28</title>
+<title>Ozon Analytics v29</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v28</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v29</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -76,7 +76,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v28';
+const VERSION='v29';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
@@ -163,19 +163,29 @@ async function loadPrices(priceMap){
   }
 
   // Тянем карточки батчами по 100, индексируем цену по всем вариантам SKU
-  let priceCount=0;
+  let priceCount=0, firstEmpty=true;
   for(let i=0;i<productIds.length;i+=100){
+    const batch=productIds.slice(i,i+100);
+    let items=[];
     try {
-      const d=await ozon('/v3/product/info/list',{product_id:productIds.slice(i,i+100)});
-      for(const item of (d?.result?.items||[])){
-        const myPrice=parseFloat(String(item.price||0).replace(',','.'))||0;
-        const info={price:myPrice, name:item.name||''};
-        [item.offer_id,item.id,item.product_id,item.sku,item.fbo_sku,item.fbs_sku]
-          .forEach(k=>{ if(k) priceMap[String(k)]=info; });
-        (item.sources||[]).forEach(s=>{ if(s.sku) priceMap[String(s.sku)]=info; });
-        if(myPrice>0) priceCount++;
+      const d=await ozon('/v3/product/info/list',{product_id:batch});
+      items=d?.result?.items||d?.items||[];
+      // Если батч вернул пусто — повтор по одному (прогрев) и ещё раз батчем
+      if(!items.length && firstEmpty){
+        firstEmpty=false;
+        try { await ozon('/v3/product/info/list',{product_id:[batch[0]]}); } catch(e){}
+        const d2=await ozon('/v3/product/info/list',{product_id:batch});
+        items=d2?.result?.items||d2?.items||[];
       }
     } catch(e){}
+    for(const item of items){
+      const myPrice=parseFloat(String(item.price||0).replace(',','.'))||0;
+      const info={price:myPrice, name:item.name||''};
+      [item.offer_id,item.id,item.product_id,item.sku,item.fbo_sku,item.fbs_sku]
+        .forEach(k=>{ if(k) priceMap[String(k)]=info; });
+      (item.sources||[]).forEach(s=>{ if(s.sku) priceMap[String(s.sku)]=info; });
+      if(myPrice>0) priceCount++;
+    }
   }
   log('Цен загружено: '+priceCount);
 }
@@ -253,9 +263,9 @@ async function fetchData(){
   $('errorBox').style.display='none';
   $('debugLog').innerHTML='';
   try {
-    await loadCabinetName();
     const priceMap={};
     await loadPrices(priceMap);
+    await loadCabinetName();
     const ops=await loadTransactions();
     const agg=aggregate(ops, priceMap);
 
