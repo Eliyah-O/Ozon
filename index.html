@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v30</title>
+<title>Ozon Analytics v31</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -43,7 +43,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v30</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v31</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -76,7 +76,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v30';
+const VERSION='v31';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
@@ -128,19 +128,12 @@ async function tg(text){
 
 // --- Имя кабинета ---
 async function loadCabinetName(){
-  const tries=[
-    ['/v1/seller/info', d=>d?.result?.name||d?.name],
-    ['/v2/seller/info', d=>d?.result?.name||d?.name],
-    ['/v1/seller/companies', d=>(d?.companies||d?.result?.companies||[])[0]?.name],
-  ];
-  for(const [ep,pick] of tries){
-    try {
-      const d=await ozon(ep,{});
-      log('cab '+ep+': '+JSON.stringify(d).slice(0,120));
-      const name=pick(d);
-      if(name){ cabName=name; $('cabName').textContent=name; log('Кабинет: '+name); return; }
-    } catch(e){ log('cab '+ep+' ✗ '+e.message); }
-  }
+  try {
+    const d=await ozon('/v1/seller/info',{});
+    const c=d?.company||d?.result?.company||d?.result||d||{};
+    const name=c.legal_name||c.name||d?.name;
+    if(name){ cabName=name; $('cabName').textContent=name; log('Кабинет: '+name); }
+  } catch(e){ log('Кабинет ✗ '+e.message); }
 }
 
 // --- Цены ("моя цена" = item.price) ---
@@ -219,8 +212,9 @@ const isSale=t=>t.includes('sale')||t.includes('agentdelivered');
 // --- Агрегация: чистая выплата по постингам ---
 function aggregate(ops, priceMap){
   // Чистая выплата заказа = сумма amount всех его операций (продажа +, удержания -)
+  // Начислено заказа = accruals_for_sale операций продажи (до вычета расходов)
   // Реклама не имеет привязки к товару — считаем отдельной общей суммой
-  const net={}, items={};
+  const net={}, gross={}, items={};
   adsTotal=0;
   for(const op of ops){
     const pn=op.posting?.posting_number || op.posting_number || '';
@@ -229,26 +223,31 @@ function aggregate(ops, priceMap){
     if(isAd(type)){ adsTotal+=amount; continue; } // реклама — мимо постингов
     if(!pn) continue;
     net[pn]=(net[pn]||0)+amount;
-    if(isSale(type) && (op.items||[]).length && !items[pn]){
-      items[pn]=op.items.map(it=>({
-        sku:String(it.sku||it.offer_id||it.product_id||''),
-        name:it.name||'',
-        qty:parseFloat(it.quantity||1)||1
-      }));
+    if(isSale(type) && (op.items||[]).length){
+      gross[pn]=(gross[pn]||0)+(parseFloat(op.accruals_for_sale||0)||0);
+      if(!items[pn]){
+        items[pn]=op.items.map(it=>({
+          sku:String(it.sku||it.offer_id||it.product_id||''),
+          name:it.name||'',
+          qty:parseFloat(it.quantity||1)||1
+        }));
+      }
     }
   }
 
-  // Раскидываем чистую выплату постинга по его товарам пропорционально количеству
+  // Раскидываем выплату и начисление постинга по его товарам пропорционально количеству
   const agg={};
   for(const pn in items){
     const list=items[pn];
     const payoutPn=net[pn]||0;
+    const grossPn=gross[pn]||0;
     const totalQty=list.reduce((s,it)=>s+it.qty,0)||1;
     for(const it of list){
       const key=it.sku; if(!key) continue;
       const pi=priceMap[key]||null;
-      if(!agg[key]) agg[key]={name:it.name||pi?.name||key, myPriceTotal:0, payoutTotal:0, qty:0};
+      if(!agg[key]) agg[key]={name:it.name||pi?.name||key, myPriceTotal:0, payoutTotal:0, grossTotal:0, qty:0};
       agg[key].payoutTotal+=payoutPn*(it.qty/totalQty);
+      agg[key].grossTotal+=grossPn*(it.qty/totalQty);
       agg[key].myPriceTotal+=(pi?.price||0)*it.qty;
       agg[key].qty+=it.qty;
     }
@@ -269,10 +268,6 @@ async function fetchData(){
     await loadPrices(priceMap);
     await loadCabinetName();
     const ops=await loadTransactions();
-    // Диагностика: какие типы операций есть (ищем рекламу)
-    const types={};
-    ops.forEach(o=>{ const t=o.operation_type||'?'; types[t]=(types[t]||0)+1; });
-    log('Типы операций: '+Object.keys(types).join(', '));
     const agg=aggregate(ops, priceMap);
 
     const withPrice=Object.values(agg).filter(p=>p.myPriceTotal>0).length;
@@ -281,8 +276,9 @@ async function fetchData(){
     allProducts=Object.entries(agg).filter(([,p])=>p.qty>0).map(([key,p])=>{
       const avgPayout=p.payoutTotal/p.qty;
       const avgMyPrice=p.myPriceTotal/p.qty;
+      const avgGross=p.grossTotal/p.qty;
       const margin=avgMyPrice>0?(avgPayout-avgMyPrice)/avgMyPrice*100:null;
-      return {key, name:p.name, total:p.payoutTotal, avgPayout, avgMyPrice, margin, diff:avgPayout-avgMyPrice, qty:p.qty};
+      return {key, name:p.name, total:p.payoutTotal, avgPayout, avgGross, avgMyPrice, margin, diff:avgPayout-avgMyPrice, qty:p.qty};
     });
 
     if(!allProducts.length){ showError('Нет данных за период.'); return; }
@@ -353,8 +349,8 @@ function renderResults(){
         <div class="mini"><div class="mini-label">ПРОДАНО</div><div class="mini-val">${Math.round(p.qty)} шт</div></div>
       </div>
       <div class="diff-row">
-        <span style="font-size:11px;color:#6b7280">Цена → чистыми</span>
-        <span style="font-size:13px;font-weight:600;color:${mc(p.margin)}">${p.diff>=0?'+':''}${fmt(p.diff)} ₽/шт</span>
+        <span style="font-size:11px;color:#6b7280">Начислено/шт (до расходов)</span>
+        <span style="font-size:13px;font-weight:600;color:#9ca3af">${fmt(p.avgGross)} ₽</span>
       </div>
     </div>
   `).join('');
