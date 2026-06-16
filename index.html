@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v31</title>
+<title>Ozon Analytics v32</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -31,6 +31,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 .prod-id { font-size: 11px; color: #6b7280; margin-bottom: 2px; }
 .badge { border-radius: 8px; padding: 4px 10px; font-size: 15px; font-weight: 700; white-space: nowrap; flex-shrink: 0; margin-left: 10px; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.grid4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
 .mini { background: #0f0f12; border-radius: 8px; padding: 8px 10px; }
 .mini-label { font-size: 10px; color: #6b7280; margin-bottom: 2px; }
 .mini-val { font-size: 13px; font-weight: 600; }
@@ -43,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v31</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v32</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -64,8 +65,9 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   <div id="results">
     <div class="grid2">
       <div class="sum-card"><div class="sum-label">ЧИСТЫМИ НА СЧЁТ</div><div class="sum-val" id="totalAccrual" style="color:#00d4ff"></div></div>
-      <div class="sum-card"><div class="sum-label">НАЦЕНКА (от моей цены)</div><div class="sum-val" id="totalMargin"></div></div>
+      <div class="sum-card"><div class="sum-label">ПРОДАНО ПО РРЦ</div><div class="sum-val" id="totalRrc" style="color:#a78bfa"></div></div>
     </div>
+    <div class="sum-card" style="margin-bottom:16px;text-align:center"><div class="sum-label">НАЦЕНКА (от РРЦ)</div><div class="sum-val" id="totalMargin"></div></div>
     <div class="sum-card" style="margin-bottom:16px;text-align:center;background:#1a1410;border-color:#3a2a1a"><div class="sum-label" style="color:#f59e0b">РЕКЛАМА (общая, не по товарам)</div><div class="sum-val" id="totalAds" style="color:#f59e0b;font-size:18px"></div></div>
     <div class="tabs">
       <button class="tab active" onclick="sortBy('revenue',this)">По выплате</button>
@@ -76,7 +78,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v31';
+const VERSION='v32';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
@@ -276,9 +278,10 @@ async function fetchData(){
     allProducts=Object.entries(agg).filter(([,p])=>p.qty>0).map(([key,p])=>{
       const avgPayout=p.payoutTotal/p.qty;
       const avgMyPrice=p.myPriceTotal/p.qty;
+      const avgRrc=avgMyPrice/2;            // РРЦ = моя цена ÷ 2
       const avgGross=p.grossTotal/p.qty;
-      const margin=avgMyPrice>0?(avgPayout-avgMyPrice)/avgMyPrice*100:null;
-      return {key, name:p.name, total:p.payoutTotal, avgPayout, avgGross, avgMyPrice, margin, diff:avgPayout-avgMyPrice, qty:p.qty};
+      const margin=avgRrc>0?(avgPayout-avgRrc)/avgRrc*100:null;  // наценка от РРЦ
+      return {key, name:p.name, total:p.payoutTotal, avgPayout, avgGross, avgMyPrice, avgRrc, margin, diff:avgPayout-avgRrc, qty:p.qty};
     });
 
     if(!allProducts.length){ showError('Нет данных за период.'); return; }
@@ -295,25 +298,25 @@ async function fetchData(){
 
 // --- Итоги ---
 function totals(){
-  const tp=allProducts.reduce((s,p)=>s+p.total,0);
-  const tm=allProducts.reduce((s,p)=>s+p.avgMyPrice*p.qty,0);
-  return {tp, tm, ov: tm>0?(tp-tm)/tm*100:null};
+  const tp=allProducts.reduce((s,p)=>s+p.total,0);              // чистыми на счёт
+  const trrc=allProducts.reduce((s,p)=>s+p.avgRrc*p.qty,0);     // продано по РРЦ
+  return {tp, trrc, ov: trrc>0?(tp-trrc)/trrc*100:null};        // наценка от РРЦ
 }
 
 // --- Telegram-отчёт ---
 async function sendTelegram(){
-  const {tp,ov}=totals();
+  const {tp,trrc,ov}=totals();
   const sorted=[...allProducts].sort((a,b)=>b.total-a.total);
   const fp=n=>n==null?'—':(n>0?'+':'')+n.toFixed(1)+'%';
   const md=m=>m==null?'⚪':m>=0?'🟢':'🔴';
   const today=new Date().toLocaleDateString('ru-RU');
   let msg=`📊 <b>${cabName} · Ozon · ${today}</b>\n30 дней\n\n`+
-          `💰 Чистыми: <b>${fmt(tp)} ₽</b>\n📈 Наценка: <b>${fp(ov)}</b>\n`+
+          `💰 Чистыми: <b>${fmt(tp)} ₽</b>\n🏷 Продано по РРЦ: <b>${fmt(trrc)} ₽</b>\n📈 Наценка: <b>${fp(ov)}</b>\n`+
           `📦 Позиций: ${allProducts.length}\n🎯 Реклама: ${fmt(adsTotal)} ₽\n─────────────────\n`;
   for(let i=0;i<Math.min(sorted.length,25);i++){
     const p=sorted[i];
     const nm=p.name.length>35?p.name.slice(0,35)+'…':p.name;
-    msg+=`\n${md(p.margin)} <b>#${i+1} ${nm}</b>\n   Цена: ${fmt(p.avgMyPrice)} ₽ → Чистыми: ${fmt(p.avgPayout)} ₽\n   <b>${fp(p.margin)}</b> · ${Math.round(p.qty)} шт\n`;
+    msg+=`\n${md(p.margin)} <b>#${i+1} ${nm}</b>\n   РРЦ: ${fmt(p.avgRrc)} ₽ → Чистыми: ${fmt(p.avgPayout)} ₽\n   <b>${fp(p.margin)}</b> · ${Math.round(p.qty)} шт\n`;
     if(msg.length>3500){ await tg(msg); msg=''; }
   }
   if(sorted.length>25) msg+=`\n…ещё ${sorted.length-25}`;
@@ -328,12 +331,13 @@ function sortBy(key,btn){
   renderResults();
 }
 function renderResults(){
-  const {tp,ov}=totals();
+  const {tp,trrc,ov}=totals();
   const sorted=[...allProducts].sort((a,b)=>
     currentSort==='revenue'? b.total-a.total :
     currentSort==='margin' ? (b.margin??-1e9)-(a.margin??-1e9) :
                              b.qty-a.qty);
   $('totalAccrual').textContent=fmt(tp)+' ₽';
+  $('totalRrc').textContent=fmt(trrc)+' ₽';
   $('totalMargin').textContent=fmtPct(ov);
   $('totalMargin').style.color=mc(ov);
   $('totalAds').textContent=fmt(adsTotal)+' ₽';
@@ -343,9 +347,10 @@ function renderResults(){
         <div><div class="prod-id">#${i+1} · ${p.key}</div><div class="prod-name">${p.name.length>50?p.name.slice(0,50)+'…':p.name}</div></div>
         <div class="badge" style="background:${mc(p.margin)}22;border:1px solid ${mc(p.margin)}44;color:${mc(p.margin)}">${fmtPct(p.margin)}</div>
       </div>
-      <div class="grid3">
+      <div class="grid4">
         <div class="mini"><div class="mini-label">МОЯ ЦЕНА</div><div class="mini-val">${fmt(p.avgMyPrice)} ₽</div></div>
-        <div class="mini"><div class="mini-label">ЧИСТЫМИ/шт</div><div class="mini-val" style="color:#00d4ff">${fmt(p.avgPayout)} ₽</div></div>
+        <div class="mini"><div class="mini-label">РРЦ</div><div class="mini-val" style="color:#a78bfa">${fmt(p.avgRrc)} ₽</div></div>
+        <div class="mini"><div class="mini-label">ЧИСТЫМИ</div><div class="mini-val" style="color:#00d4ff">${fmt(p.avgPayout)} ₽</div></div>
         <div class="mini"><div class="mini-label">ПРОДАНО</div><div class="mini-val">${Math.round(p.qty)} шт</div></div>
       </div>
       <div class="diff-row">
