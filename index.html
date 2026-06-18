@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v37</title>
+<title>Ozon Analytics v38</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v37</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v38</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -79,7 +79,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v37';
+const VERSION='v38';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
@@ -223,6 +223,7 @@ function aggregate(ops, priceMap){
   // Реклама не имеет привязки к товару — считаем отдельной общей суммой
   const net={}, gross={}, items={}, dates={};
   adsTotal=0;
+  let maxOpDate='', dateFieldsLogged=false;
   for(const op of ops){
     const pn=op.posting?.posting_number || op.posting_number || '';
     const amount=parseFloat(op.amount||0)||0;
@@ -230,9 +231,18 @@ function aggregate(ops, priceMap){
     if(isAd(type)){ adsTotal+=amount; continue; } // реклама — мимо постингов
     if(!pn) continue;
     net[pn]=(net[pn]||0)+amount;
-    // Дата отгрузки заказа (берём дату из постинга или операции)
-    const d=op.posting?.order_date || op.posting?.delivery_date || op.operation_date || '';
-    if(d && !dates[pn]) dates[pn]=d;
+    // Диагностика: какие поля дат реально есть (один раз)
+    if(!dateFieldsLogged){
+      log('op.operation_date='+op.operation_date);
+      log('posting='+JSON.stringify(op.posting||{}).slice(0,160));
+      dateFieldsLogged=true;
+    }
+    // Дата операции (начисления) — приоритетна; берём самую свежую по постингу
+    const d=op.operation_date || op.posting?.order_date || op.posting?.delivery_date || '';
+    if(d){
+      if(d>maxOpDate) maxOpDate=d;
+      if(d>(dates[pn]||'')) dates[pn]=d;
+    }
     if(isSale(type) && (op.items||[]).length){
       gross[pn]=(gross[pn]||0)+(parseFloat(op.accruals_for_sale||0)||0);
       if(!items[pn]){
@@ -245,6 +255,7 @@ function aggregate(ops, priceMap){
     }
   }
 
+  log('Макс. дата операции: '+(maxOpDate||'нет'));
   // Раскидываем выплату и начисление постинга по его товарам пропорционально количеству
   const agg={};
   for(const pn in items){
