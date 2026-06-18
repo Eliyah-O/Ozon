@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v39</title>
+<title>Ozon Analytics v40</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v39</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v40</span></div>
     <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -79,7 +79,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v39';
+const VERSION='v40';
 let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
 
 // --- helpers ---
@@ -289,7 +289,8 @@ async function fetchData(){
     allProducts=Object.entries(agg).filter(([,p])=>p.qty>0).map(([key,p])=>{
       const avgPayout=p.payoutTotal/p.qty;
       const avgMyPrice=p.myPriceTotal/p.qty;
-      const avgRrc=avgMyPrice/2;            // РРЦ = моя цена ÷ 2
+      const rrcDiv = cid()==='3586168' ? 3 : 2;   // кабинет 3586168: РРЦ = цена ÷ 3, иначе ÷ 2
+      const avgRrc=avgMyPrice/rrcDiv;
       const avgGross=p.grossTotal/p.qty;
       const margin=avgRrc>0?(avgPayout-avgRrc)/avgRrc*100:null;  // наценка от РРЦ
       return {key, article:p.article||p.name, name:p.name, total:p.payoutTotal, avgPayout, avgGross, avgMyPrice, avgRrc, margin, diff:avgPayout-avgRrc, qty:p.qty, lastDate:p.lastDate||''};
