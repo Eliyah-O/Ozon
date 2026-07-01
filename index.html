@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v49</title>
+<title>Ozon Analytics v50</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v49</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v50</span></div>
     <div style="font-size:11px;color:#6b7280">аналитика кабинета ОЗОН · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -84,7 +84,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v49';
+const VERSION='v50';
 let allProducts=[], allOrderRows=[], allReturns=[], adsTotal=0, cabName='Кабинет', currentSort='date';
 let channelStats={fbs:{orders:0,net:0},fbo:{orders:0,net:0},ret:{qty:0,rrc:0}};
 
@@ -224,7 +224,7 @@ function aggregate(ops, priceMap){
   const rrcDiv = cid()==='3586168' ? 3 : 2;
   // Статистика по каналам и возвратам
   const stat={ FBS:{orders:new Set(), net:0}, FBO:{orders:new Set(), net:0}, ret:{qty:0, rrc:0} };
-  const returnRows=[];
+  const returnRows=[], retSeen=new Set();
   for(const op of ops){
     const pn=op.posting?.posting_number || op.posting_number || '';
     const amount=parseFloat(op.amount||0)||0;
@@ -239,6 +239,10 @@ function aggregate(ops, priceMap){
         const key=String(it.sku||it.offer_id||it.product_id||'');
         const q=parseFloat(it.quantity||1)||1;
         const price=priceMap[key]?.price||0;
+        // Дедуп: один и тот же заказ+товар не считаем повторно
+        const dedupKey=rpn+'|'+key;
+        if(retSeen.has(dedupKey)) continue;
+        retSeen.add(dedupKey);
         stat.ret.qty+=q;
         stat.ret.rrc+=(price/rrcDiv)*q;
         returnRows.push({
