@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v40</title>
+<title>Ozon Analytics v49</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,8 +44,8 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v40</span></div>
-    <div style="font-size:11px;color:#6b7280">Ozon Analytics · Наценка · 30 дней</div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v49</span></div>
+    <div style="font-size:11px;color:#6b7280">аналитика кабинета ОЗОН · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
 </div>
@@ -54,8 +54,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
     <div class="card">
       <label>Client ID</label><input type="text" inputmode="numeric" id="clientId" placeholder="2375416">
       <label>API ключ</label><input type="password" id="apiKey" placeholder="••••••••••••">
-      <label>Telegram Bot Token</label><input type="text" id="tgToken" placeholder="8819121520:AAG...">
-      <label>Telegram Chat ID</label><input type="text" id="tgChatId" placeholder="8819121520">
+    
     </div>
     <div class="debug" id="debugLog"></div>
     <div class="error" id="errorBox"></div>
@@ -69,18 +68,25 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
     </div>
     <div class="sum-card" style="margin-bottom:16px;text-align:center"><div class="sum-label">ОТЛИЧИЕ ОТ РРЦ</div><div class="sum-val" id="totalMargin"></div></div>
     <div class="sum-card" style="margin-bottom:16px;text-align:center;background:#1a1410;border-color:#3a2a1a"><div class="sum-label" style="color:#f59e0b">РЕКЛАМА (общая, не по товарам)</div><div class="sum-val" id="totalAds" style="color:#f59e0b;font-size:18px"></div></div>
+    <div class="grid3" style="margin-bottom:16px">
+      <div class="sum-card"><div class="sum-label" style="color:#00d4ff">FBS</div><div class="sum-val" id="statFbs" style="font-size:16px"></div><div class="mini-label" id="statFbsN" style="margin-top:4px"></div></div>
+      <div class="sum-card"><div class="sum-label" style="color:#22c55e">FBO</div><div class="sum-val" id="statFbo" style="font-size:16px"></div><div class="mini-label" id="statFboN" style="margin-top:4px"></div></div>
+      <div class="sum-card"><div class="sum-label" style="color:#ef4444">ВОЗВРАТЫ</div><div class="sum-val" id="statRet" style="font-size:16px;color:#ef4444"></div><div class="mini-label" id="statRetN" style="margin-top:4px"></div></div>
+    </div>
     <div class="tabs">
-      <button class="tab active" onclick="sortBy('revenue',this)">По выплате</button>
+      <button class="tab" onclick="sortBy('revenue',this)">По выплате</button>
       <button class="tab" onclick="sortBy('margin',this)">По наценке</button>
       <button class="tab" onclick="sortBy('qty',this)">По кол-ву</button>
-      <button class="tab" onclick="sortBy('date',this)">По дате</button>
+      <button class="tab active" onclick="sortBy('date',this)">По дате</button>
+      <button class="tab" onclick="sortBy('returns',this)">Возвраты</button>
     </div>
     <div id="prodList"></div>
   </div>
 </div>
 <script>
-const VERSION='v40';
-let allProducts=[], adsTotal=0, cabName='Кабинет', currentSort='revenue';
+const VERSION='v49';
+let allProducts=[], allOrderRows=[], allReturns=[], adsTotal=0, cabName='Кабинет', currentSort='date';
+let channelStats={fbs:{orders:0,net:0},fbo:{orders:0,net:0},ret:{qty:0,rrc:0}};
 
 // --- helpers ---
 const fmt=n=>n!=null?Math.round(n).toLocaleString('ru-RU'):'—';
@@ -98,12 +104,9 @@ function akey(){ return $('apiKey').value.trim(); }
 window.onload=()=>{
   $('clientId').value=ls('oz_cid')||'';
   $('apiKey').value=ls('oz_key')||'';
-  $('tgToken').value=ls('oz_tgt')||'';
-  $('tgChatId').value=ls('oz_tgc')||'';
 };
 function saveCreds(){
   ls('oz_cid',$('clientId').value); ls('oz_key',$('apiKey').value);
-  ls('oz_tgt',$('tgToken').value); ls('oz_tgc',$('tgChatId').value);
 }
 function log(msg){ const el=$('debugLog'); el.style.display='block'; el.innerHTML+='› '+msg+'<br>'; el.scrollTop=el.scrollHeight; }
 function showError(msg){ const el=$('errorBox'); el.style.display='block'; el.textContent='⚠ '+msg; }
@@ -123,14 +126,6 @@ async function ozon(endpoint, body){
   });
   if(!r.ok) throw new Error('HTTP '+r.status+' '+endpoint);
   return r.json();
-}
-async function tg(text){
-  const token=$('tgToken').value, chatId=$('tgChatId').value;
-  if(!token||!chatId) return;
-  await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML'})
-  });
 }
 
 // --- Имя кабинета ---
@@ -215,24 +210,52 @@ async function loadTransactions(){
 
 const isAd=t=>t.includes('promotion')||t.includes('advert');
 const isSale=t=>t.includes('sale')||t.includes('agentdelivered');
+// Настоящий возврат товара покупателем = OperationItemReturn.
+// (OperationReturnGoodsFBSofRMS — складская логистика, не возврат; исключаем)
+const isReturn=t=>t==='operationitemreturn';
 
-// --- Агрегация: чистая выплата по постингам ---
+// --- Агрегация: и по товарам (свод), и по заказам (детально) ---
 function aggregate(ops, priceMap){
   // Чистая выплата заказа = сумма amount всех его операций (продажа +, удержания -)
   // Начислено заказа = accruals_for_sale операций продажи (до вычета расходов)
   // Реклама не имеет привязки к товару — считаем отдельной общей суммой
-  const net={}, gross={}, items={}, dates={};
+  const net={}, gross={}, items={}, dates={}, schema={};
   adsTotal=0;
+  const rrcDiv = cid()==='3586168' ? 3 : 2;
+  // Статистика по каналам и возвратам
+  const stat={ FBS:{orders:new Set(), net:0}, FBO:{orders:new Set(), net:0}, ret:{qty:0, rrc:0} };
+  const returnRows=[];
   for(const op of ops){
     const pn=op.posting?.posting_number || op.posting_number || '';
     const amount=parseFloat(op.amount||0)||0;
     const type=(op.operation_type||'').toLowerCase();
     if(isAd(type)){ adsTotal+=amount; continue; } // реклама — мимо постингов
+    // Возвраты: считаем количество и сумму по РРЦ возвращённых товаров
+    if(isReturn(type)){
+      const rpn=op.posting?.posting_number || op.posting_number || '';
+      const rdt=op.operation_date || op.posting?.order_date || '';
+      const rsch=op.posting?.delivery_schema || '';
+      for(const it of (op.items||[])){
+        const key=String(it.sku||it.offer_id||it.product_id||'');
+        const q=parseFloat(it.quantity||1)||1;
+        const price=priceMap[key]?.price||0;
+        stat.ret.qty+=q;
+        stat.ret.rrc+=(price/rrcDiv)*q;
+        returnRows.push({
+          key, posting:rpn, schema:rsch,
+          article:priceMap[key]?.article||key,
+          name:priceMap[key]?.name||it.name||key,
+          qty:q, rrc:(price/rrcDiv)*q, myPrice:price*q, lastDate:rdt
+        });
+      }
+    }
     if(!pn) continue;
     net[pn]=(net[pn]||0)+amount;
     // Дата операции (начисления) — приоритетна; берём самую свежую по постингу
     const d=op.operation_date || op.posting?.order_date || op.posting?.delivery_date || '';
     if(d && d>(dates[pn]||'')) dates[pn]=d;
+    // Схема доставки (FBS/FBO)
+    if(op.posting?.delivery_schema && !schema[pn]) schema[pn]=op.posting.delivery_schema;
     if(isSale(type) && (op.items||[]).length){
       gross[pn]=(gross[pn]||0)+(parseFloat(op.accruals_for_sale||0)||0);
       if(!items[pn]){
@@ -245,27 +268,55 @@ function aggregate(ops, priceMap){
     }
   }
 
-  // Раскидываем выплату и начисление постинга по его товарам пропорционально количеству
-  const agg={};
+  // rows — по позициям заказов; agg — свод по товару
+  const rows=[], agg={};
   for(const pn in items){
     const list=items[pn];
     const payoutPn=net[pn]||0;
     const grossPn=gross[pn]||0;
     const dt=dates[pn]||'';
+    const sch=schema[pn]||'';
+    // Статистика по каналу: заказ + чистыми
+    if(sch==='FBS'||sch==='FBO'){ stat[sch].orders.add(pn); stat[sch].net+=payoutPn; }
     const totalQty=list.reduce((s,it)=>s+it.qty,0)||1;
     for(const it of list){
       const key=it.sku; if(!key) continue;
       const pi=priceMap[key]||null;
-      if(!agg[key]) agg[key]={name:it.name||pi?.name||key, article:pi?.article||'', myPriceTotal:0, payoutTotal:0, grossTotal:0, qty:0, lastDate:''};
-      agg[key].payoutTotal+=payoutPn*(it.qty/totalQty);
-      agg[key].grossTotal+=grossPn*(it.qty/totalQty);
-      agg[key].myPriceTotal+=(pi?.price||0)*it.qty;
+      const share=it.qty/totalQty;
+      const payout=payoutPn*share, grossV=grossPn*share, priceV=(pi?.price||0)*it.qty;
+      // артикул: реальный offer_id, иначе SKU (никогда не имя)
+      const article=pi?.article||key;
+      const name=pi?.name||it.name||key;
+      // строка-заказ
+      rows.push({key, posting:pn, article, name, qty:it.qty, schema:sch,
+        payoutTotal:payout, grossTotal:grossV, myPriceTotal:priceV, lastDate:dt});
+      // свод по товару
+      if(!agg[key]) agg[key]={key, article, name, qty:0, payoutTotal:0, grossTotal:0, myPriceTotal:0, lastDate:''};
       agg[key].qty+=it.qty;
-      // Запоминаем самую свежую дату продажи товара
-      if(dt && dt>agg[key].lastDate) agg[key].lastDate=dt;
+      agg[key].payoutTotal+=payout;
+      agg[key].grossTotal+=grossV;
+      agg[key].myPriceTotal+=priceV;
+      if(dt>agg[key].lastDate) agg[key].lastDate=dt;
     }
   }
-  return agg;
+  channelStats={
+    fbs:{orders:stat.FBS.orders.size, net:stat.FBS.net},
+    fbo:{orders:stat.FBO.orders.size, net:stat.FBO.net},
+    ret:{qty:stat.ret.qty, rrc:stat.ret.rrc}
+  };
+  return {rows, products:Object.values(agg), returnRows};
+}
+
+// Превращает сырую строку/свод в объект для рендера
+function toProduct(p, rrcDiv){
+  const avgPayout=p.payoutTotal/p.qty;
+  const avgMyPrice=p.myPriceTotal/p.qty;
+  const avgRrc=avgMyPrice/rrcDiv;
+  const avgGross=p.grossTotal/p.qty;
+  const margin=avgRrc>0?(avgPayout-avgRrc)/avgRrc*100:null;
+  return {key:p.key, posting:p.posting||'', schema:p.schema||'', article:p.article, name:p.name,
+    total:p.payoutTotal, avgPayout, avgGross, avgMyPrice, avgRrc, margin,
+    diff:avgPayout-avgRrc, qty:p.qty, lastDate:p.lastDate||''};
 }
 
 // --- Главный поток ---
@@ -281,23 +332,17 @@ async function fetchData(){
     await loadPrices(priceMap);
     await loadCabinetName();
     const ops=await loadTransactions();
-    const agg=aggregate(ops, priceMap);
+    const {rows, products, returnRows}=aggregate(ops, priceMap);
 
-    const withPrice=Object.values(agg).filter(p=>p.myPriceTotal>0).length;
-    log('Позиций: '+Object.keys(agg).length+', с ценой: '+withPrice);
+    const rrcDiv = cid()==='3586168' ? 3 : 2;   // кабинет 3586168: РРЦ = цена ÷ 3, иначе ÷ 2
+    allProducts=products.filter(p=>p.qty>0).map(p=>toProduct(p, rrcDiv));   // свод по товару
+    allOrderRows=rows.filter(p=>p.qty>0).map(p=>toProduct(p, rrcDiv));      // по заказам
+    allReturns=returnRows;                                                   // возвраты
 
-    allProducts=Object.entries(agg).filter(([,p])=>p.qty>0).map(([key,p])=>{
-      const avgPayout=p.payoutTotal/p.qty;
-      const avgMyPrice=p.myPriceTotal/p.qty;
-      const rrcDiv = cid()==='3586168' ? 3 : 2;   // кабинет 3586168: РРЦ = цена ÷ 3, иначе ÷ 2
-      const avgRrc=avgMyPrice/rrcDiv;
-      const avgGross=p.grossTotal/p.qty;
-      const margin=avgRrc>0?(avgPayout-avgRrc)/avgRrc*100:null;  // наценка от РРЦ
-      return {key, article:p.article||p.name, name:p.name, total:p.payoutTotal, avgPayout, avgGross, avgMyPrice, avgRrc, margin, diff:avgPayout-avgRrc, qty:p.qty, lastDate:p.lastDate||''};
-    });
+    const withPrice=allProducts.filter(p=>p.avgMyPrice>0).length;
+    log('Товаров: '+allProducts.length+' (с ценой '+withPrice+'), строк-заказов: '+allOrderRows.length);
 
     if(!allProducts.length){ showError('Нет данных за период.'); return; }
-    await sendTelegram();
     renderResults();
     $('results').style.display='block';
     $('settingsBtn').style.display='block';
@@ -315,26 +360,6 @@ function totals(){
   return {tp, trrc, ov: trrc>0?(tp-trrc)/trrc*100:null};        // наценка от РРЦ
 }
 
-// --- Telegram-отчёт ---
-async function sendTelegram(){
-  const {tp,trrc,ov}=totals();
-  const sorted=[...allProducts].sort((a,b)=>b.total-a.total);
-  const fp=n=>n==null?'—':(n>0?'+':'')+n.toFixed(1)+'%';
-  const md=m=>m==null?'⚪':m>=0?'🟢':'🔴';
-  const today=new Date().toLocaleDateString('ru-RU');
-  let msg=`📊 <b>${cabName} · Ozon · ${today}</b>\n30 дней\n\n`+
-          `💰 Чистыми: <b>${fmt(tp)} ₽</b>\n🏷 Продано по РРЦ: <b>${fmt(trrc)} ₽</b>\n📈 Наценка: <b>${fp(ov)}</b>\n`+
-          `📦 Позиций: ${allProducts.length}\n🎯 Реклама: ${fmt(adsTotal)} ₽\n─────────────────\n`;
-  for(let i=0;i<Math.min(sorted.length,25);i++){
-    const p=sorted[i];
-    const nm=p.name.length>35?p.name.slice(0,35)+'…':p.name;
-    msg+=`\n${md(p.margin)} <b>#${i+1} ${nm}</b>\n   РРЦ: ${fmt(p.avgRrc)} ₽ → Чистыми: ${fmt(p.avgPayout)} ₽\n   <b>${fp(p.margin)}</b> · ${Math.round(p.qty)} шт\n`;
-    if(msg.length>3500){ await tg(msg); msg=''; }
-  }
-  if(sorted.length>25) msg+=`\n…ещё ${sorted.length-25}`;
-  if(msg) await tg(msg);
-}
-
 // --- Рендер ---
 function sortBy(key,btn){
   currentSort=key;
@@ -344,20 +369,49 @@ function sortBy(key,btn){
 }
 function renderResults(){
   const {tp,trrc,ov}=totals();
-  const sorted=[...allProducts].sort((a,b)=>
-    currentSort==='revenue'? b.total-a.total :
-    currentSort==='margin' ? (b.margin??-1e9)-(a.margin??-1e9) :
-    currentSort==='date'   ? (b.lastDate||'').localeCompare(a.lastDate||'') :
-                             b.qty-a.qty);
   $('totalAccrual').textContent=fmt(tp)+' ₽';
   $('totalRrc').textContent=fmt(trrc)+' ₽';
   $('totalMargin').textContent=fmtPct(ov);
   $('totalMargin').style.color=mcRrc(ov);
   $('totalAds').textContent=fmt(adsTotal)+' ₽';
+  $('statFbs').textContent=fmt(channelStats.fbs.net)+' ₽';
+  $('statFbsN').textContent=channelStats.fbs.orders+' зак.';
+  $('statFbo').textContent=fmt(channelStats.fbo.net)+' ₽';
+  $('statFboN').textContent=channelStats.fbo.orders+' зак.';
+  $('statRet').textContent=fmt(channelStats.ret.rrc)+' ₽';
+  $('statRetN').textContent=Math.round(channelStats.ret.qty)+' шт (по РРЦ)';
+
+  // --- Раздел ВОЗВРАТЫ ---
+  if(currentSort==='returns'){
+    const rs=[...allReturns].sort((a,b)=>(b.lastDate||'').localeCompare(a.lastDate||''));
+    if(!rs.length){ $('prodList').innerHTML='<div style="text-align:center;color:#6b7280;padding:30px">Возвратов за период нет</div>'; return; }
+    $('prodList').innerHTML=rs.map((p,i)=>`
+      <div class="prod">
+        <div class="prod-top">
+          <div><div class="prod-id">#${i+1} · ${p.article||p.key}${p.lastDate?' · '+fmtDate(p.lastDate):''}</div><div class="prod-name">${p.name.length>50?p.name.slice(0,50)+'…':p.name}</div>${p.posting?`<div style="font-size:10px;color:#4b5563;margin-top:2px">заказ ${p.posting}${p.schema?` · <span style="color:${p.schema==='FBO'?'#22c55e':'#00d4ff'};font-weight:600">${p.schema}</span>`:''}</div>`:''}</div>
+          <div class="badge" style="background:#ef444422;border:1px solid #ef444444;color:#ef4444">возврат</div>
+        </div>
+        <div class="grid3">
+          <div class="mini"><div class="mini-label">РРЦ</div><div class="mini-val" style="color:#a78bfa">${fmt(p.rrc)} ₽</div></div>
+          <div class="mini"><div class="mini-label">МОЯ ЦЕНА</div><div class="mini-val">${fmt(p.myPrice)} ₽</div></div>
+          <div class="mini"><div class="mini-label">ВЕРНУЛИ</div><div class="mini-val">${Math.round(p.qty)} шт</div></div>
+        </div>
+      </div>
+    `).join('');
+    return;
+  }
+
+  // "По дате" — детально по заказам; остальные — свод по товару
+  const base = currentSort==='date' ? allOrderRows : allProducts;
+  const sorted=[...base].sort((a,b)=>
+    currentSort==='revenue'? b.total-a.total :
+    currentSort==='margin' ? (b.margin??-1e9)-(a.margin??-1e9) :
+    currentSort==='date'   ? (b.lastDate||'').localeCompare(a.lastDate||'') :
+                             b.qty-a.qty);
   $('prodList').innerHTML=sorted.map((p,i)=>`
     <div class="prod">
       <div class="prod-top">
-        <div><div class="prod-id">#${i+1} · ${p.article||p.key}${p.lastDate?' · '+fmtDate(p.lastDate):''}</div><div class="prod-name">${p.name.length>50?p.name.slice(0,50)+'…':p.name}</div></div>
+        <div><div class="prod-id">#${i+1} · ${p.article||p.key}${p.lastDate?' · '+fmtDate(p.lastDate):''}</div><div class="prod-name">${p.name.length>50?p.name.slice(0,50)+'…':p.name}</div>${currentSort==='date'&&p.posting?`<div style="font-size:10px;color:#4b5563;margin-top:2px">заказ ${p.posting}${p.schema?` · <span style="color:${p.schema==='FBO'?'#22c55e':'#00d4ff'};font-weight:600">${p.schema}</span>`:''}</div>`:''}</div>
         <div class="badge" style="background:${mcRrc(p.margin)}22;border:1px solid ${mcRrc(p.margin)}44;color:${mcRrc(p.margin)}">${fmtPct(p.margin)}</div>
       </div>
       <div class="grid4">
