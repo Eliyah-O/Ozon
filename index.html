@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v50</title>
+<title>Ozon Analytics v51</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v50</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v51</span></div>
     <div style="font-size:11px;color:#6b7280">аналитика кабинета ОЗОН · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -84,7 +84,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v50';
+const VERSION='v51';
 let allProducts=[], allOrderRows=[], allReturns=[], adsTotal=0, cabName='Кабинет', currentSort='date';
 let channelStats={fbs:{orders:0,net:0},fbo:{orders:0,net:0},ret:{qty:0,rrc:0}};
 
@@ -272,8 +272,8 @@ function aggregate(ops, priceMap){
     }
   }
 
-  // rows — по позициям заказов; agg — свод по товару
-  const rows=[], agg={};
+  // rows — по позициям заказов (одинаковые товары одного заказа объединяем); agg — свод по товару
+  const rowMap={}, agg={};
   for(const pn in items){
     const list=items[pn];
     const payoutPn=net[pn]||0;
@@ -291,9 +291,14 @@ function aggregate(ops, priceMap){
       // артикул: реальный offer_id, иначе SKU (никогда не имя)
       const article=pi?.article||key;
       const name=pi?.name||it.name||key;
-      // строка-заказ
-      rows.push({key, posting:pn, article, name, qty:it.qty, schema:sch,
-        payoutTotal:payout, grossTotal:grossV, myPriceTotal:priceV, lastDate:dt});
+      // строка-заказ: объединяем одинаковый товар в пределах одного заказа
+      const rk=pn+'|'+key;
+      if(!rowMap[rk]) rowMap[rk]={key, posting:pn, article, name, qty:0, schema:sch,
+        payoutTotal:0, grossTotal:0, myPriceTotal:0, lastDate:dt};
+      rowMap[rk].qty+=it.qty;
+      rowMap[rk].payoutTotal+=payout;
+      rowMap[rk].grossTotal+=grossV;
+      rowMap[rk].myPriceTotal+=priceV;
       // свод по товару
       if(!agg[key]) agg[key]={key, article, name, qty:0, payoutTotal:0, grossTotal:0, myPriceTotal:0, lastDate:''};
       agg[key].qty+=it.qty;
@@ -303,6 +308,7 @@ function aggregate(ops, priceMap){
       if(dt>agg[key].lastDate) agg[key].lastDate=dt;
     }
   }
+  const rows=Object.values(rowMap);
   channelStats={
     fbs:{orders:stat.FBS.orders.size, net:stat.FBS.net},
     fbo:{orders:stat.FBO.orders.size, net:stat.FBO.net},
