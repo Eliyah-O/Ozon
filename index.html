@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ozon Analytics v51</title>
+<title>Ozon Analytics v53</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f12; color: #e8e8f0; min-height: 100vh; }
@@ -44,7 +44,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="header">
   <div class="logo">O</div>
   <div>
-    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v51</span></div>
+    <div style="font-size:16px;font-weight:700"><span id="cabName">Кабинет</span> <span class="ver">v53</span></div>
     <div style="font-size:11px;color:#6b7280">аналитика кабинета ОЗОН · 30 дней</div>
   </div>
   <button class="settings-btn" id="settingsBtn" onclick="showSettings()">⚙ Ключи</button>
@@ -52,13 +52,34 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
 <div class="body">
   <div id="settings">
     <div class="card">
-      <label>Client ID</label><input type="text" inputmode="numeric" id="clientId" placeholder="2375416">
-      <label>API ключ</label><input type="password" id="apiKey" placeholder="••••••••••••">
+      <label>Client ID</label><input type="text" inputmode="numeric" id="clientId" placeholder="Client ID">
+      <label>API ключ</label><input type="password" id="apiKey" placeholder="API Key">
     
     </div>
     <div class="debug" id="debugLog"></div>
     <div class="error" id="errorBox"></div>
     <button class="btn" id="loadBtn" onclick="fetchData()">Загрузить статистику →</button>
+    <div id="instr" style="margin-top:16px;padding:16px;background:#0f1621;border:1px solid #1e2937;border-radius:14px;font-size:13px;line-height:1.6;color:#9ca3af">
+      <div style="font-weight:600;color:#e5e7eb;margin-bottom:8px">Как получить Client ID и API Key</div>
+      <ol style="margin:0;padding-left:18px">
+        <li>Зайди в личный кабинет продавца: <b style="color:#00d4ff">seller.ozon.ru</b> (под аккаунтом администратора)</li>
+        <li>В правом верхнем углу нажми на значок профиля → <b>Настройки</b></li>
+        <li>В меню слева выбери <b>Seller API</b></li>
+        <li>Скопируй <b>Client ID</b> и вставь в окно №1 приложения</li>
+        <li>Нажми <b>«Сгенерировать ключ»</b></li>
+        <li>Введи название ключа (например, «Аналитика»)</li>
+        <li>Выбери цель использования ключа — <b>Для личного использования</b></li>
+        <li>Типы токена — выбери роли:
+          <ul style="margin:4px 0;padding-left:16px">
+            <li>Admin read only</li>
+            <li>Product read-only</li>
+          </ul>
+        </li>
+        <li>Нажми <b>«Сгенерировать»</b></li>
+        <li>Скопируй ключ <b>сразу</b> — он показывается только один раз</li>
+        <li>Вставь ключ (API Key) в окно №2 приложения</li>
+      </ol>
+    </div>
     
   </div>
   <div id="results">
@@ -84,7 +105,7 @@ input { width: 100%; padding: 12px 14px; border-radius: 10px; background: #0f0f1
   </div>
 </div>
 <script>
-const VERSION='v51';
+const VERSION='v53';
 let allProducts=[], allOrderRows=[], allReturns=[], adsTotal=0, cabName='Кабинет', currentSort='date';
 let channelStats={fbs:{orders:0,net:0},fbo:{orders:0,net:0},ret:{qty:0,rrc:0}};
 
@@ -115,6 +136,7 @@ function showSettings(){
   $('settingsBtn').style.display='none';
   $('debugLog').style.display='none'; $('debugLog').innerHTML='';
   $('errorBox').style.display='none';
+  $('instr').style.display='block';
 }
 
 // --- API ---
@@ -335,6 +357,7 @@ async function fetchData(){
   saveCreds();
   const btn=$('loadBtn');
   btn.disabled=true; btn.textContent='Загрузка...';
+  $('instr').style.display='none';
   $('errorBox').style.display='none';
   $('debugLog').innerHTML='';
   try {
